@@ -46,7 +46,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $version = (Select-Xml -Path 'src/AnimeTierlist.Desktop/AnimeTierlist.Desktop.csproj' -XPath '//Version').Node.InnerText
           if (-not $version) { throw 'Desktop project has no <Version>.' }
-          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") {
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -cne "v$version") {
             throw "Tag '$env:GITHUB_REF_NAME' does not match Desktop <Version> 'v$version'."
           }
           $name = "AnimeTierlist-$version-win-x64"
@@ -69,7 +69,10 @@ jobs:
           SHA_PATH: ${{ steps.meta.outputs.sha256 }}
         run: |
           $ErrorActionPreference = 'Stop'
-          gh release create $env:TAG $env:ZIP_PATH $env:SHA_PATH --title "AnimeTierlist $env:VERSION" --generate-notes --verify-tag
+          $releaseArgs = @($env:TAG, $env:ZIP_PATH, $env:SHA_PATH, '--title', "AnimeTierlist $env:VERSION", '--generate-notes', '--verify-tag')
+          # SemVer prerelease suffix (for example 1.0.0-beta.1) publishes as a GitHub prerelease.
+          if ($env:VERSION -match '-') { $releaseArgs += '--prerelease' }
+          gh release create @releaseArgs
 
       - name: Upload release artifacts (manual run)
         if: github.event_name == 'workflow_dispatch'

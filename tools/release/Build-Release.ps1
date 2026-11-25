@@ -39,7 +39,7 @@ try {
 
 if (Test-Path (Join-Path $stage 'data')) { throw 'The publish folder must not contain a data folder.' }
 
-Copy-Item (Join-Path $root 'docs\RELEASE_README.md') (Join-Path $stage 'README.md')
+Copy-Item (Join-Path $root 'README.md') (Join-Path $stage 'README.md')
 Copy-Item (Join-Path $root 'LICENSE') (Join-Path $stage 'LICENSE')
 Copy-Item (Join-Path $root 'THIRD_PARTY_NOTICES.md') (Join-Path $stage 'THIRD_PARTY_NOTICES.md')
 

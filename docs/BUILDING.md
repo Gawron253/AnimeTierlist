@@ -37,11 +37,11 @@ Run the release script to build the portable ZIP and SHA-256 checksum:
 .\tools\release\Build-Release.ps1
 ```
 
-The script writes `out\AnimeTierlist-<version>-win-x64.zip` and `out\AnimeTierlist-<version>-win-x64.zip.sha256`, packaging `docs/RELEASE_README.md` as `README.md`, `LICENSE`, `THIRD_PARTY_NOTICES.md`, and upstream third-party notices under `licenses/`. It does not upload or publish anything.
+The script writes `out\AnimeTierlist-<version>-win-x64.zip` and `out\AnimeTierlist-<version>-win-x64.zip.sha256`, packaging `README.md`, `LICENSE`, `THIRD_PARTY_NOTICES.md`, and upstream third-party notices under `licenses/`. It does not upload or publish anything.
 
 Running `AnimeTierlist.exe` creates `data\` next to the executable. If that directory is not writable, the app asks for another data directory for the current session.
 
 ## Continuous integration and releases
 
 - [.github/workflows/ci.yml](../.github/workflows/ci.yml) runs on every pull request to `main` and every push to `main` on `windows-latest`. It restores with `--locked-mode`, builds `AnimeTierlist.slnx`, and runs `tools/release/Build-Release.ps1` to verify the standalone package builds cleanly.
-- [.github/workflows/release.yml](../.github/workflows/release.yml) runs on `v*` tag pushes and manual workflow dispatches. On a tag push (such as `v2.0.0`), it checks that the tag matches `<Version>` in `src/AnimeTierlist.Desktop/AnimeTierlist.Desktop.csproj`, builds the standalone ZIP and `.sha256` file, and creates a GitHub Release with both files attached. Manual runs build the ZIP and `.sha256` file and upload them as workflow artifacts.
+- [.github/workflows/release.yml](../.github/workflows/release.yml) runs on `v*` tag pushes and manual workflow dispatches. On a tag push (such as `v1.0.0`, or `v1.0.0-beta.1` for a prerelease), it checks that the tag matches `<Version>` in `src/AnimeTierlist.Desktop/AnimeTierlist.Desktop.csproj`, builds the standalone ZIP and `.sha256` file, and creates a GitHub Release with both files attached. Versions with a prerelease suffix (`-beta.1`, `-rc.1`) are published as GitHub prereleases. Manual runs build the ZIP and `.sha256` file and upload them as workflow artifacts.
