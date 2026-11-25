@@ -1,0 +1,24 @@
+<Window x:Class="AnimeTierlist.Desktop.Views.AppDialogWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Width="540" SizeToContent="Height" MaxHeight="560" MinWidth="400"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False" UseLayoutRounding="True"
+        Background="{DynamicResource Brush.BgCanvas}" Foreground="{DynamicResource Brush.TextPrimary}">
+    <DockPanel Margin="18,16">
+        <TextBlock x:Name="HeadingText" DockPanel.Dock="Top" Style="{StaticResource Text.Title}" TextWrapping="Wrap" Margin="0,0,0,8" />
+
+        <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource Brush.BorderSubtle}" BorderThickness="0,1,0,0" Padding="0,12,0,0" Margin="0,14,0,0">
+            <DockPanel>
+                <Button x:Name="CopyButton" DockPanel.Dock="Left" Content="Copy list" Visibility="Collapsed" Click="OnCopyDetails" />
+                <StackPanel x:Name="ButtonBar" Orientation="Horizontal" HorizontalAlignment="Right" />
+            </DockPanel>
+        </Border>
+
+        <DockPanel>
+            <TextBlock x:Name="MessageText" DockPanel.Dock="Top" Style="{StaticResource Text.Body}" TextWrapping="Wrap" />
+            <TextBox x:Name="DetailsBox" Margin="0,10,0,0" IsReadOnly="True" TextWrapping="Wrap" Visibility="Collapsed"
+                     VerticalScrollBarVisibility="Auto" MaxHeight="240" FontFamily="{StaticResource Font.Mono}" FontSize="12"
+                     VerticalContentAlignment="Top" Padding="8" />
+        </DockPanel>
+    </DockPanel>
+</Window>

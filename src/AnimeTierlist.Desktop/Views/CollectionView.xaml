@@ -1,0 +1,709 @@
+<UserControl x:Class="AnimeTierlist.Desktop.Views.CollectionView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:AnimeTierlist.Desktop.ViewModels"
+             xmlns:views="clr-namespace:AnimeTierlist.Desktop.Views"
+             xmlns:services="clr-namespace:AnimeTierlist.Desktop.Services"
+             xmlns:controls="clr-namespace:AnimeTierlist.Desktop.Controls"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance Type=vm:CollectionViewModel}"
+             Background="{DynamicResource Brush.BgCanvas}"
+             x:Name="Root"
+             SizeChanged="OnSizeChanged"
+             PreviewKeyDown="OnPreviewKeyDown">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="Visible" />
+        <views:InverseBooleanToVisibilityConverter x:Key="Hidden" />
+        <views:NotEmptyToVisibilityConverter x:Key="IfAny" />
+        <views:EqualsToBooleanConverter x:Key="EqBool" />
+
+        <!-- Poster card template for virtualized Grid view -->
+        <DataTemplate x:Key="PosterCardTemplate" DataType="{x:Type vm:EntryViewModel}">
+            <Border CornerRadius="6" BorderThickness="1.5" Padding="6" SnapsToDevicePixels="True"
+                    HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Background" Value="{DynamicResource Brush.BgSurface}" />
+                        <Setter Property="BorderBrush" Value="{DynamicResource Brush.BorderSubtle}" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding Included}" Value="True">
+                                <Setter Property="BorderBrush" Value="{DynamicResource Brush.SuccessBorder}" />
+                                <Setter Property="Background" Value="{DynamicResource Brush.BgRaised}" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding CoverBroken}" Value="True">
+                                <Setter Property="BorderBrush" Value="{DynamicResource Brush.DangerBorder}" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <DockPanel>
+                    <!-- Title + status caption below poster -->
+                    <StackPanel DockPanel.Dock="Bottom" Margin="0,6,0,0" Height="50">
+                        <TextBlock Style="{StaticResource Text.CardTitle}" Text="{Binding Title}" MaxHeight="33" ToolTip="{Binding Title}" />
+                        <DockPanel Margin="0,2,0,0">
+                            <TextBlock DockPanel.Dock="Right" Style="{StaticResource Text.Muted}" FontSize="11" Text="Excluded" Margin="4,0,0,0"
+                                       Visibility="{Binding Included, Converter={StaticResource Hidden}}" />
+                            <TextBlock Style="{StaticResource Text.Caption}" FontSize="11" Foreground="{DynamicResource Brush.AccentText}"
+                                       Text="{Binding TitleNote}" ToolTip="{Binding TitleNote}" TextTrimming="CharacterEllipsis"
+                                       Visibility="{Binding TitleNote, Converter={StaticResource IfAny}}" />
+                        </DockPanel>
+                    </StackPanel>
+
+                    <!-- Poster art with 2:3 mat, #position pill, Included checkbox, and non-color warning badge -->
+                    <Border x:Name="PosterArtFrame" Background="Transparent" CornerRadius="4" ClipToBounds="True"
+                            Height="{Binding DataContext.PosterHeight, ElementName=Root}">
+                        <Grid>
+                            <Border Width="{Binding DataContext.PosterWidth, ElementName=Root}" HorizontalAlignment="Stretch"
+                                    Background="{DynamicResource Brush.BgPosterMat}" CornerRadius="4" ClipToBounds="True">
+                                <Grid>
+                                    <!-- Placeholder when no cover or broken cover -->
+                                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="8"
+                                                ToolTip="{Binding CoverPlaceholder}"
+                                                Visibility="{Binding HasCover, Converter={StaticResource Hidden}}">
+                                        <Path Data="{StaticResource Icon.ImageOff}" Width="22" Height="22" Stretch="Uniform"
+                                              Stroke="{DynamicResource Brush.TextMuted}" StrokeThickness="1.5" HorizontalAlignment="Center" />
+                                        <TextBlock Style="{StaticResource Text.Caption}" Text="{Binding CoverPlaceholder}"
+                                                   TextAlignment="Center" TextWrapping="Wrap" Margin="0,6,0,0"
+                                                   Visibility="{Binding CoverBroken, Converter={StaticResource Hidden}}" />
+                                    </StackPanel>
+
+                                    <Image Source="{Binding Thumbnail}" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality">
+                                        <Image.Style>
+                                            <Style TargetType="Image">
+                                                <Setter Property="Opacity" Value="1" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Included}" Value="False">
+                                                        <Setter Property="Opacity" Value="0.78" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Image.Style>
+                                    </Image>
+                                </Grid>
+                            </Border>
+
+                            <!-- Top-left ordinal pill (#1, #2, ...) -->
+                            <Border HorizontalAlignment="Left" VerticalAlignment="Top" Margin="4"
+                                    Background="{DynamicResource Brush.BadgeOverlay}" BorderBrush="{DynamicResource Brush.BorderSubtle}"
+                                    BorderThickness="1" CornerRadius="4" Padding="5,1">
+                                <TextBlock FontFamily="{StaticResource Font.Mono}" FontSize="11" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource Brush.BadgeOverlayText}" Text="{Binding PositionText}" />
+                            </Border>
+
+                            <!-- Top-right Included checkbox -->
+                            <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="4"
+                                    Background="{DynamicResource Brush.BadgeOverlay}" CornerRadius="4" Padding="3">
+                                <CheckBox IsChecked="{Binding Included}" IsEnabled="{Binding DataContext.Project.EditsEnabled, ElementName=Root}"
+                                          AutomationProperties.Name="Included" Focusable="False" />
+                            </Border>
+
+                            <!-- Bottom-left status badge (Damaged / Unlisted / Fetching) -->
+                            <Border HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="4" CornerRadius="4" Padding="6,2"
+                                    Visibility="{Binding StatusBadgeText, Converter={StaticResource IfAny}}">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="Background" Value="{DynamicResource Brush.BadgeOverlay}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SourceMissing}" Value="True">
+                                                <Setter Property="Background" Value="{DynamicResource Brush.WarningSurface}" />
+                                                <Setter Property="BorderBrush" Value="{DynamicResource Brush.WarningBorder}" />
+                                                <Setter Property="BorderThickness" Value="1" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding CoverBroken}" Value="True">
+                                                <Setter Property="Background" Value="{DynamicResource Brush.DangerFill}" />
+                                                <Setter Property="BorderBrush" Value="{DynamicResource Brush.BorderControl}" />
+                                                <Setter Property="BorderThickness" Value="1.5" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Data="{StaticResource Icon.Warning}" Width="11" Height="11" Stretch="Uniform" Margin="0,0,4,0"
+                                          VerticalAlignment="Center" Stroke="{DynamicResource Brush.OnDanger}" StrokeThickness="1.8"
+                                          Visibility="{Binding CoverBroken, Converter={StaticResource Visible}}" />
+                                    <TextBlock FontSize="11" FontWeight="SemiBold" Text="{Binding StatusBadgeText}" VerticalAlignment="Center">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="{DynamicResource Brush.BadgeOverlayText}" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding SourceMissing}" Value="True">
+                                                        <Setter Property="Foreground" Value="{DynamicResource Brush.WarningText}" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding CoverBroken}" Value="True">
+                                                        <Setter Property="Foreground" Value="{DynamicResource Brush.OnDanger}" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                    </Border>
+                </DockPanel>
+            </Border>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <DockPanel Margin="14,10">
+        <!-- Row 1 + Row 2: Compact two-row header + filter bar -->
+        <StackPanel DockPanel.Dock="Top">
+            <!-- Row 1: Title, inline rename, context summary, and primary actions -->
+            <Grid Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Orientation="Vertical" VerticalAlignment="Center" Margin="0,0,10,0">
+                    <!-- Display title + rename button -->
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
+                                Visibility="{Binding IsRenamingInline, Converter={StaticResource Hidden}}">
+                        <TextBlock Style="{StaticResource Text.Title}" Text="{Binding Name}" TextTrimming="CharacterEllipsis" MaxWidth="420" />
+                        <Button Style="{StaticResource IconButton}" Command="{Binding BeginInlineRenameCommand}" Margin="4,0,0,0"
+                                ToolTip="Rename collection (Ctrl+Shift+R)" AutomationProperties.Name="Rename collection">
+                            <Path Data="{StaticResource Icon.Edit}" Width="13" Height="13" Stretch="Uniform"
+                                  Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.7" />
+                        </Button>
+                    </StackPanel>
+                    <!-- Inline rename box -->
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
+                                Visibility="{Binding IsRenamingInline, Converter={StaticResource Visible}}">
+                        <TextBox x:Name="InlineRenameBox" Width="240" Text="{Binding RenameText, UpdateSourceTrigger=PropertyChanged}"
+                                 AutomationProperties.Name="Collection name" KeyDown="OnInlineRenameKeyDown" />
+                        <Button Style="{StaticResource PrimaryButton}" Content="Save" Command="{Binding CommitInlineRenameCommand}" Margin="6,0,4,0" />
+                        <Button Content="Cancel" Command="{Binding CancelInlineRenameCommand}" />
+                    </StackPanel>
+
+                    <TextBlock Style="{StaticResource Text.Caption}" TextTrimming="CharacterEllipsis" Margin="0,1,0,0">
+                        <Run Text="{Binding ContextLabel, Mode=OneWay}" />
+                        <Run Text=" · " />
+                        <Run Text="{Binding Summary, Mode=OneWay}" />
+                    </TextBlock>
+                </StackPanel>
+
+                <!-- Right primary action bar -->
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Style="{StaticResource PrimaryButton}" Content="Create _board..." Command="{Binding PromptCreateBoardCommand}"
+                            Margin="0,0,6,0" ToolTip="Create a new ranking board from all included shows" />
+                    <Button Content="Fetch co_vers" Command="{Binding FetchCoversCommand}" Margin="0,0,6,0"
+                            Visibility="{Binding IsFetchingCovers, Converter={StaticResource Hidden}}" />
+                    <Button Style="{StaticResource DangerButton}" Content="Stop covers" Command="{Binding FetchCoversCancelCommand}" Margin="0,0,6,0"
+                            Visibility="{Binding IsFetchingCovers, Converter={StaticResource Visible}}" />
+                    <Button Content="Export c_overs..." Command="{Binding ExportCoversCommand}" Margin="0,0,6,0"
+                            ToolTip="Export all included shows' covers in effective collection order into a new folder with a manifest." />
+                    <Button Style="{StaticResource IconButton}" Command="{Binding ToggleInspectorCommand}" Margin="0,0,4,0"
+                            ToolTip="Toggle entry details inspector (F4)" AutomationProperties.Name="Toggle entry inspector">
+                        <Path Data="{StaticResource Icon.Inspector}" Width="14" Height="14" Stretch="Uniform"
+                              Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.7" />
+                    </Button>
+                    <Button x:Name="CollectionMoreButton" Style="{StaticResource IconButton}" Click="OnCollectionMoreClick"
+                            ToolTip="More collection actions" AutomationProperties.Name="More collection actions">
+                        <Path Data="{StaticResource Icon.More}" Width="14" Height="14" Stretch="Uniform"
+                              Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="2" />
+                        <Button.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="Check LiveChart for _updates" Command="{Binding CheckForUpdatesCommand}" />
+                                <MenuItem Header="Stop update check" Command="{Binding CheckForUpdatesCancelCommand}"
+                                          Visibility="{Binding IsCheckingUpdates, Converter={StaticResource Visible}}" />
+                                <MenuItem Header="Rename collection..." Command="{Binding BeginInlineRenameCommand}" InputGestureText="Ctrl+Shift+R" />
+                                <Separator />
+                                <MenuItem Header="_Include all shows" Command="{Binding IncludeAllCommand}" InputGestureText="Alt+I" />
+                                <MenuItem Header="E_xclude all shows" Command="{Binding ExcludeAllCommand}" InputGestureText="Alt+X" />
+                                <Separator />
+                                <MenuItem Header="Delete collection..." Command="{Binding DeleteCommand}" Foreground="{DynamicResource Brush.DangerText}" />
+                            </ContextMenu>
+                        </Button.ContextMenu>
+                    </Button>
+                </StackPanel>
+            </Grid>
+
+            <!-- Row 2: Search, filter chips, language, view toggle, density -->
+            <Border Background="{DynamicResource Brush.BgSurface}" BorderBrush="{DynamicResource Brush.BorderSubtle}"
+                    BorderThickness="1" CornerRadius="6" Padding="8,4" Margin="0,0,0,8">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <WrapPanel VerticalAlignment="Center">
+                        <!-- Search with clear button -->
+                        <Grid Width="138" Margin="0,2,5,2">
+                            <TextBox x:Name="SearchBox" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                     Padding="7,4,24,4" views:TextBoxAssist.Placeholder="Search (Ctrl+F)"
+                                     AutomationProperties.Name="Search collection" KeyDown="OnSearchKeyDown"
+                                     ToolTip="Visual filter by title or LiveChart ID. Never changes collection order or export scope." />
+                            <Button Style="{StaticResource IconButton}" Width="22" Height="22" MinHeight="22" HorizontalAlignment="Right" Margin="0,0,2,0"
+                                    Command="{Binding ClearSearchCommand}" Visibility="{Binding HasSearchText, Converter={StaticResource Visible}}"
+                                    AutomationProperties.Name="Clear search" ToolTip="Clear search (Esc)">
+                                <Path Data="{StaticResource Icon.Close}" Width="10" Height="10" Stretch="Uniform"
+                                      Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.8" />
+                            </Button>
+                        </Grid>
+
+                        <!-- Visual filter chips (formatted labels so UIA announces full chip names) -->
+                        <RadioButton Style="{StaticResource SegmentedRadioStyle}" GroupName="CollectionFilter" Padding="6,3" Margin="0,2,2,2"
+                                     IsChecked="{Binding FilterMode, Converter={StaticResource EqBool}, ConverterParameter=All}"
+                                     Content="{Binding AllChipLabel}" />
+                        <RadioButton Style="{StaticResource SegmentedRadioStyle}" GroupName="CollectionFilter" Padding="6,3" Margin="0,2,2,2"
+                                     IsChecked="{Binding FilterMode, Converter={StaticResource EqBool}, ConverterParameter=Included}"
+                                     Content="{Binding IncludedChipLabel}" />
+                        <RadioButton Style="{StaticResource SegmentedRadioStyle}" GroupName="CollectionFilter" Padding="6,3" Margin="0,2,2,2"
+                                     IsChecked="{Binding FilterMode, Converter={StaticResource EqBool}, ConverterParameter=Excluded}"
+                                     Content="{Binding ExcludedChipLabel}" />
+                        <RadioButton Style="{StaticResource SegmentedRadioStyle}" GroupName="CollectionFilter" Padding="6,3" Margin="0,2,2,2"
+                                     IsChecked="{Binding FilterMode, Converter={StaticResource EqBool}, ConverterParameter=NoCover}"
+                                     Content="{Binding NoCoverChipLabel}"
+                                     Visibility="{Binding NoCoverCount, Converter={StaticResource IfAny}}" />
+                        <RadioButton Style="{StaticResource SegmentedRadioStyle}" GroupName="CollectionFilter" Padding="6,3" Margin="0,2,4,2"
+                                     IsChecked="{Binding FilterMode, Converter={StaticResource EqBool}, ConverterParameter=NeedsAttention}"
+                                     Content="{Binding AttentionChipLabel}"
+                                     Visibility="{Binding NeedsAttentionCount, Converter={StaticResource IfAny}}" />
+
+                        <!-- Bulk actions (fold into overflow menu on narrow viewports so filter bar stays single-row at 960x540) -->
+                        <Button Style="{StaticResource SubtleButton}" Content="_Include all" Command="{Binding IncludeAllCommand}" Margin="0,2,1,2" Padding="5,3" FontSize="12"
+                                Visibility="{Binding ShowInlineBulkActions, Converter={StaticResource Visible}}" />
+                        <Button Style="{StaticResource SubtleButton}" Content="E_xclude all" Command="{Binding ExcludeAllCommand}" Margin="0,2,1,2" Padding="5,3" FontSize="12"
+                                Visibility="{Binding ShowInlineBulkActions, Converter={StaticResource Visible}}" />
+                        <Button Style="{StaticResource SubtleButton}" Command="{Binding IncludeVisibleCommand}" Margin="0,2,2,2" Padding="5,3" FontSize="12"
+                                Content="{Binding IncludeVisibleLabel}"
+                                Visibility="{Binding IsFiltered, Converter={StaticResource Visible}}"
+                                ToolTip="Includes every entry currently matching the visual filter." />
+                    </WrapPanel>
+
+                    <!-- Right display controls: Language, Grid/List, Density -->
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="5,0,0,0">
+                        <ComboBox x:Name="LanguageBox" Width="140" ItemsSource="{Binding LanguageOptions}" DisplayMemberPath="Label"
+                                  SelectedItem="{Binding Language}" IsEnabled="{Binding Project.EditsEnabled}"
+                                  AutomationProperties.Name="Title language"
+                                  ToolTip="Display title language (does not change identity or order)" Margin="0,0,6,0" />
+
+                        <!-- Grid / List toggle (keeps 1px border when checked so High Contrast never relies on color alone) -->
+                        <Border Background="{DynamicResource Brush.BgRaised}" BorderBrush="{DynamicResource Brush.BorderSubtle}"
+                                BorderThickness="1" CornerRadius="5" Padding="2" Margin="0,0,6,0">
+                            <StackPanel Orientation="Horizontal">
+                                <RadioButton Style="{StaticResource SegmentedRadioStyle}" GroupName="ViewMode" BorderBrush="Transparent" Padding="6,3" MinHeight="24"
+                                             IsChecked="{Binding ViewMode, Converter={StaticResource EqBool}, ConverterParameter=Grid}"
+                                             AutomationProperties.Name="Poster grid view" ToolTip="Poster grid view">
+                                    <Path Data="{StaticResource Icon.Grid}" Width="13" Height="13" Stretch="Uniform"
+                                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=RadioButton}}" StrokeThickness="1.7" />
+                                </RadioButton>
+                                <RadioButton Style="{StaticResource SegmentedRadioStyle}" GroupName="ViewMode" BorderBrush="Transparent" Padding="6,3" MinHeight="24"
+                                             IsChecked="{Binding ViewMode, Converter={StaticResource EqBool}, ConverterParameter=List}"
+                                             AutomationProperties.Name="Table list view" ToolTip="Compact list view">
+                                    <Path Data="{StaticResource Icon.List}" Width="13" Height="13" Stretch="Uniform"
+                                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=RadioButton}}" StrokeThickness="1.7" />
+                                </RadioButton>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Density toggle (Grid mode; reflects EffectiveDensity honestly on compact viewports) -->
+                        <Border Background="{DynamicResource Brush.BgRaised}" BorderBrush="{DynamicResource Brush.BorderSubtle}"
+                                BorderThickness="1" CornerRadius="5" Padding="2"
+                                Visibility="{Binding IsGridView, Converter={StaticResource Visible}}">
+                            <StackPanel Orientation="Horizontal">
+                                <RadioButton Style="{StaticResource SegmentedRadioStyle}" GroupName="ColDensity" BorderBrush="Transparent" Padding="6,2" MinHeight="24"
+                                             Content="S" ToolTip="Compact poster cards" AutomationProperties.Name="Compact poster density"
+                                             Command="{Binding SetDensityCommand}" CommandParameter="{x:Static services:CardDensity.Compact}"
+                                             IsChecked="{Binding EffectiveDensity, Converter={StaticResource EqBool}, ConverterParameter=Compact, Mode=OneWay}" />
+                                <RadioButton Style="{StaticResource SegmentedRadioStyle}" GroupName="ColDensity" BorderBrush="Transparent" Padding="6,2" MinHeight="24"
+                                             Content="M" ToolTip="Standard poster cards (requires a taller window when disabled)"
+                                             ToolTipService.ShowOnDisabled="True"
+                                             AutomationProperties.Name="Standard poster density"
+                                             AutomationProperties.HelpText="Requires a taller window when disabled"
+                                             IsEnabled="{Binding IsNotCompactViewport}"
+                                             Command="{Binding SetDensityCommand}" CommandParameter="{x:Static services:CardDensity.Standard}"
+                                             IsChecked="{Binding EffectiveDensity, Converter={StaticResource EqBool}, ConverterParameter=Standard, Mode=OneWay}" />
+                                <RadioButton Style="{StaticResource SegmentedRadioStyle}" GroupName="ColDensity" BorderBrush="Transparent" Padding="6,2" MinHeight="24"
+                                             Content="L" ToolTip="Large poster cards (requires a taller window when disabled)"
+                                             ToolTipService.ShowOnDisabled="True"
+                                             AutomationProperties.Name="Large poster density"
+                                             AutomationProperties.HelpText="Requires a taller window when disabled"
+                                             IsEnabled="{Binding IsNotCompactViewport}"
+                                             Command="{Binding SetDensityCommand}" CommandParameter="{x:Static services:CardDensity.Large}"
+                                             IsChecked="{Binding EffectiveDensity, Converter={StaticResource EqBool}, ConverterParameter=Large, Mode=OneWay}" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Conditional Cover Progress / Status strip -->
+            <Border Background="{DynamicResource Brush.BgSurface}" BorderBrush="{DynamicResource Brush.BorderSubtle}"
+                    BorderThickness="1" CornerRadius="6" Padding="10,6" Margin="0,0,0,8"
+                    Visibility="{Binding CoverStatus, Converter={StaticResource IfAny}}">
+                <DockPanel>
+                    <Button DockPanel.Dock="Right" Style="{StaticResource IconButton}" Width="24" Height="24" MinHeight="24"
+                            Command="{Binding DismissCoverStatusCommand}" Visibility="{Binding IsFetchingCovers, Converter={StaticResource Hidden}}"
+                            AutomationProperties.Name="Dismiss cover status" Margin="8,0,0,0">
+                        <Path Data="{StaticResource Icon.Close}" Width="10" Height="10" Stretch="Uniform"
+                              Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.8" />
+                    </Button>
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource Text.Caption}" Text="{Binding CoverStatus}" TextWrapping="Wrap" />
+                        <ProgressBar Margin="0,5,0,0" Minimum="0" Maximum="{Binding CoverProgressTotal}" Value="{Binding CoverProgressCompleted}"
+                                     Visibility="{Binding IsFetchingCovers, Converter={StaticResource Visible}}" />
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+
+            <!-- Conditional Refresh status InfoBar -->
+            <controls:InfoBar Severity="Info" Message="{Binding RefreshStatus}" IsClosable="True"
+                              DismissCommand="{Binding DismissRefreshStatusCommand}" Margin="0,0,0,8"
+                              Visibility="{Binding RefreshStatus, Converter={StaticResource IfAny}}" />
+
+            <!-- Conditional Active Filter notice -->
+            <Border Background="{DynamicResource Brush.AccentSurface}" BorderBrush="{DynamicResource Brush.AccentFill}"
+                    BorderThickness="1" CornerRadius="6" Padding="10,5" Margin="0,0,0,8"
+                    Visibility="{Binding IsFiltered, Converter={StaticResource Visible}}">
+                <DockPanel>
+                    <Button DockPanel.Dock="Right" Style="{StaticResource LinkButton}" Content="Clear filter" Command="{Binding ClearFiltersCommand}" />
+                    <TextBlock Style="{StaticResource Text.Caption}" Foreground="{DynamicResource Brush.AccentText}"
+                               Text="{Binding FilterSummary}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                </DockPanel>
+            </Border>
+        </StackPanel>
+
+        <!-- Main content + collapsible Entry Details Inspector (docked side panel or overlay drawer on narrow widths) -->
+        <Grid x:Name="WorkspaceGrid" SizeChanged="OnWorkspaceGridSizeChanged">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition x:Name="InspectorColumn" Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Left: Virtualized Poster Grid OR List View -->
+            <Grid Grid.Column="0">
+                <!-- Poster Grid View (default) -->
+                <controls:PosterGridListBox x:Name="PosterGrid" ItemsSource="{Binding View}" SelectedItem="{Binding SelectedEntry}"
+                         SelectionMode="Extended" ItemTemplate="{StaticResource PosterCardTemplate}"
+                         AutomationProperties.Name="Collection entries in effective order"
+                         Visibility="{Binding IsGridView, Converter={StaticResource Visible}}"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto"
+                         ScrollViewer.CanContentScroll="True"
+                         VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
+                         AllowDrop="True" PreviewMouseLeftButtonDown="OnCollectionMouseDown" PreviewMouseMove="OnCollectionMouseMove"
+                         DragOver="OnCollectionDragOver" DragLeave="OnCollectionDragLeave" Drop="OnCollectionDrop"
+                         PreviewKeyDown="OnListPreviewKeyDown" MouseDoubleClick="OnEntryDoubleClick">
+                    <ListBox.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <controls:VirtualizingTilePanel
+                                TileWidth="{Binding DataContext.TileWidth, ElementName=Root}"
+                                TileHeight="{Binding DataContext.TileHeight, ElementName=Root}"
+                                HorizontalGap="8" VerticalGap="8" CenterContent="True" />
+                        </ItemsPanelTemplate>
+                    </ListBox.ItemsPanel>
+                    <ListBox.InputBindings>
+                        <KeyBinding Key="Up" Modifiers="Alt" Command="{Binding MoveUpCommand}" />
+                        <KeyBinding Key="Down" Modifiers="Alt" Command="{Binding MoveDownCommand}" />
+                        <KeyBinding Key="Home" Modifiers="Alt" Command="{Binding MoveToTopCommand}" />
+                        <KeyBinding Key="End" Modifiers="Alt" Command="{Binding MoveToBottomCommand}" />
+                    </ListBox.InputBindings>
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Padding" Value="0" />
+                            <Setter Property="Margin" Value="0" />
+                            <Setter Property="Background" Value="Transparent" />
+                            <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRingStyle}" />
+                            <Setter Property="AutomationProperties.Name" Value="{Binding AccessibleName}" />
+                            <Setter Property="AutomationProperties.ItemStatus" Value="{Binding ItemStatus}" />
+                            <EventSetter Event="GotKeyboardFocus" Handler="OnEntryGotKeyboardFocus" />
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <Border x:Name="SelectionFrame" CornerRadius="8" BorderThickness="2.5" BorderBrush="Transparent" Padding="1">
+                                            <ContentPresenter />
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsSelected" Value="True">
+                                                <Setter TargetName="SelectionFrame" Property="BorderBrush" Value="{DynamicResource Brush.AccentFill}" />
+                                                <Setter TargetName="SelectionFrame" Property="Background" Value="{DynamicResource Brush.BgSelected}" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                </controls:PosterGridListBox>
+
+                <!-- Compact Table List View -->
+                <ListView x:Name="EntryList" ItemsSource="{Binding View}" SelectedItem="{Binding SelectedEntry}"
+                          SelectionMode="Extended" SizeChanged="OnEntryListSizeChanged"
+                          AutomationProperties.Name="Collection entries in effective order"
+                          Visibility="{Binding IsListView, Converter={StaticResource Visible}}"
+                          VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" VirtualizingPanel.ScrollUnit="Pixel"
+                          PreviewKeyDown="OnListPreviewKeyDown" MouseDoubleClick="OnEntryDoubleClick">
+                    <ListView.InputBindings>
+                        <KeyBinding Key="Up" Modifiers="Alt" Command="{Binding MoveUpCommand}" />
+                        <KeyBinding Key="Down" Modifiers="Alt" Command="{Binding MoveDownCommand}" />
+                        <KeyBinding Key="Home" Modifiers="Alt" Command="{Binding MoveToTopCommand}" />
+                        <KeyBinding Key="End" Modifiers="Alt" Command="{Binding MoveToBottomCommand}" />
+                    </ListView.InputBindings>
+                    <ListView.ItemContainerStyle>
+                        <Style TargetType="ListViewItem" BasedOn="{StaticResource {x:Type ListViewItem}}">
+                            <Setter Property="AutomationProperties.Name" Value="{Binding AccessibleName}" />
+                            <Setter Property="AutomationProperties.ItemStatus" Value="{Binding ItemStatus}" />
+                            <EventSetter Event="GotKeyboardFocus" Handler="OnEntryGotKeyboardFocus" />
+                        </Style>
+                    </ListView.ItemContainerStyle>
+                    <ListView.View>
+                        <GridView>
+                            <GridViewColumn Header="#" Width="44" DisplayMemberBinding="{Binding PositionText}" />
+                            <GridViewColumn Header="Cover" Width="56">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Border Width="42" Height="60" CornerRadius="3" Background="{DynamicResource Brush.BgPosterMat}" ClipToBounds="True"
+                                                ToolTip="{Binding CoverPlaceholder}">
+                                            <Grid>
+                                                <Path Width="16" Height="16" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                      Visibility="{Binding HasCover, Converter={StaticResource Hidden}}">
+                                                    <Path.Style>
+                                                        <Style TargetType="Path">
+                                                            <Setter Property="Data" Value="{StaticResource Icon.ImageOff}" />
+                                                            <Setter Property="Stroke" Value="{DynamicResource Brush.TextMuted}" />
+                                                            <Setter Property="StrokeThickness" Value="1.5" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding CoverBroken}" Value="True">
+                                                                    <Setter Property="Data" Value="{StaticResource Icon.Warning}" />
+                                                                    <Setter Property="Stroke" Value="{DynamicResource Brush.DangerText}" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Path.Style>
+                                                </Path>
+                                                <Image Source="{Binding Thumbnail}" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                            <GridViewColumn Header="Included" Width="68">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <CheckBox IsChecked="{Binding Included}" IsEnabled="{Binding DataContext.Project.EditsEnabled, ElementName=Root}"
+                                                  HorizontalAlignment="Center" AutomationProperties.Name="Included" Focusable="False" />
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                            <GridViewColumn x:Name="ListTitleColumn" Header="Title" Width="280">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Margin="4,0">
+                                            <TextBlock FontSize="13" FontWeight="SemiBold" Text="{Binding Title}" TextWrapping="Wrap"
+                                                       Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ListViewItem}}" />
+                                            <TextBlock FontSize="12" Text="{Binding TitleNote}"
+                                                       Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ListViewItem}}"
+                                                       Visibility="{Binding TitleNote, Converter={StaticResource IfAny}}" />
+                                            <TextBlock FontSize="11" Text="No longer listed by LiveChart"
+                                                       Visibility="{Binding SourceMissing, Converter={StaticResource Visible}}">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Foreground" Value="{DynamicResource Brush.WarningText}" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListViewItem}}" Value="True">
+                                                                <Setter Property="Foreground" Value="{DynamicResource Brush.TextOnSelected}" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=ListViewItem}}" Value="True">
+                                                                <Setter Property="Foreground" Value="{DynamicResource Brush.TextOnHover}" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                            <GridViewColumn Header="Cover status" Width="118">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Border CornerRadius="4" HorizontalAlignment="Left" ToolTip="{Binding ListCoverStatusToolTip}">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Padding" Value="0" />
+                                                    <Setter Property="Background" Value="Transparent" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding CoverBroken}" Value="True">
+                                                            <Setter Property="Background" Value="{DynamicResource Brush.DangerFill}" />
+                                                            <Setter Property="BorderBrush" Value="{DynamicResource Brush.OnDanger}" />
+                                                            <Setter Property="BorderThickness" Value="1" />
+                                                            <Setter Property="Padding" Value="6,1" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <TextBlock FontSize="12" Text="{Binding ListCoverStatus}" TextTrimming="CharacterEllipsis">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ListViewItem}}" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding CoverBroken}" Value="True">
+                                                                <Setter Property="Foreground" Value="{DynamicResource Brush.OnDanger}" />
+                                                                <Setter Property="FontWeight" Value="SemiBold" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </Border>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                            <GridViewColumn Header="ID" Width="70" DisplayMemberBinding="{Binding IdText}" />
+                        </GridView>
+                    </ListView.View>
+                </ListView>
+            </Grid>
+
+            <!-- Overlay scrim when inspector opens over narrow viewport -->
+            <Border x:Name="InspectorScrim" Grid.Column="0" Background="{DynamicResource Brush.BgOverlay}" Visibility="Collapsed"
+                    MouseLeftButtonDown="OnScrimClick" />
+
+            <!-- Collapsible Entry Details Inspector -->
+            <Border x:Name="InspectorHost" Grid.Column="1" Width="304" Margin="10,0,0,0"
+                    Background="{DynamicResource Brush.BgSurface}" BorderBrush="{DynamicResource Brush.BorderSubtle}"
+                    BorderThickness="1" CornerRadius="8"
+                    Visibility="{Binding InspectorOpen, Converter={StaticResource Visible}}">
+                <DockPanel>
+                    <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource Brush.BorderSubtle}" BorderThickness="0,0,0,1" Padding="12,8">
+                        <DockPanel>
+                            <Button DockPanel.Dock="Right" Style="{StaticResource IconButton}" Width="26" Height="26" MinHeight="26"
+                                    Command="{Binding CloseInspectorCommand}" AutomationProperties.Name="Close inspector" ToolTip="Close inspector (Esc)">
+                                <Path Data="{StaticResource Icon.Close}" Width="11" Height="11" Stretch="Uniform"
+                                      Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.8" />
+                            </Button>
+                            <TextBlock Style="{StaticResource Text.Subtitle}" Text="Entry details" VerticalAlignment="Center" />
+                        </DockPanel>
+                    </Border>
+
+                    <!-- Empty state when nothing is selected -->
+                    <StackPanel Margin="16" VerticalAlignment="Center"
+                                Visibility="{Binding HasSelectedEntry, Converter={StaticResource Hidden}}">
+                        <TextBlock Style="{StaticResource Text.BodyStrong}" Text="Select a show" />
+                        <TextBlock Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Margin="0,4,0,0"
+                                   Text="Inspect captured LiveChart titles, set a custom title, adjust collection order, or recover damaged covers." />
+                    </StackPanel>
+
+                    <!-- Selected entry details -->
+                    <ScrollViewer x:Name="CollectionInspectorScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                  Visibility="{Binding HasSelectedEntry, Converter={StaticResource Visible}}">
+                        <StackPanel Margin="12">
+                            <!-- Poster + identity header -->
+                            <Grid Margin="0,0,0,12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="86" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Border Width="78" Height="112" CornerRadius="5" Background="{DynamicResource Brush.BgPosterMat}"
+                                        BorderBrush="{DynamicResource Brush.BorderSubtle}" BorderThickness="1" ClipToBounds="True" HorizontalAlignment="Left">
+                                    <Grid>
+                                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="4"
+                                                    Visibility="{Binding SelectedEntry.HasCover, Converter={StaticResource Hidden}}">
+                                            <Path Width="18" Height="18" Stretch="Uniform" HorizontalAlignment="Center">
+                                                <Path.Style>
+                                                    <Style TargetType="Path">
+                                                        <Setter Property="Data" Value="{StaticResource Icon.ImageOff}" />
+                                                        <Setter Property="Stroke" Value="{DynamicResource Brush.TextMuted}" />
+                                                        <Setter Property="StrokeThickness" Value="1.5" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding SelectedEntry.CoverBroken}" Value="True">
+                                                                <Setter Property="Data" Value="{StaticResource Icon.Warning}" />
+                                                                <Setter Property="Stroke" Value="{DynamicResource Brush.DangerText}" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Path.Style>
+                                            </Path>
+                                            <TextBlock Style="{StaticResource Text.Caption}" Text="{Binding SelectedEntry.CoverPlaceholder}"
+                                                       TextAlignment="Center" TextWrapping="Wrap" Margin="0,5,0,0" />
+                                        </StackPanel>
+                                        <Image Source="{Binding SelectedEntry.Thumbnail}" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality" />
+                                    </Grid>
+                                </Border>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Top">
+                                    <TextBlock Style="{StaticResource Text.BodyStrong}" Text="{Binding SelectedEntry.Title}" TextWrapping="Wrap" />
+                                    <TextBlock Style="{StaticResource Text.Caption}" Margin="0,4,0,0">
+                                        <Run Text="Position " />
+                                        <Run Text="{Binding SelectedEntry.Position, Mode=OneWay}" />
+                                        <Run Text=" of " />
+                                        <Run Text="{Binding TotalCount, Mode=OneWay}" />
+                                    </TextBlock>
+                                    <TextBlock Style="{StaticResource Text.Muted}" FontFamily="{StaticResource Font.Mono}" FontSize="11"
+                                               Text="{Binding SelectedEntry.IdText, StringFormat=LiveChart ID: {0}}" Margin="0,2,0,0" />
+                                    <CheckBox Content="Included in collection" IsChecked="{Binding SelectedEntry.Included}"
+                                              IsEnabled="{Binding Project.EditsEnabled}" Margin="0,8,0,0" />
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- Manual collection order controls -->
+                            <TextBlock Style="{StaticResource Text.Section}" Text="COLLECTION ORDER" Margin="0,0,0,6" />
+                            <UniformGrid Columns="2" Margin="0,0,0,4">
+                                <Button Content="Move up" Command="{Binding MoveUpCommand}" ToolTip="Alt+Up" Margin="0,0,4,4" />
+                                <Button Content="Move down" Command="{Binding MoveDownCommand}" ToolTip="Alt+Down" Margin="4,0,0,4" />
+                                <Button Content="To top" Command="{Binding MoveToTopCommand}" ToolTip="Alt+Home" Margin="0,0,4,0" />
+                                <Button Content="To bottom" Command="{Binding MoveToBottomCommand}" ToolTip="Alt+End" Margin="4,0,0,0" />
+                            </UniformGrid>
+                            <TextBlock Style="{StaticResource Text.Caption}" Foreground="{DynamicResource Brush.WarningText}" TextWrapping="Wrap"
+                                       Text="Clear search and filters to change collection order." Margin="0,2,0,8"
+                                       Visibility="{Binding IsFiltered, Converter={StaticResource Visible}}" />
+
+                            <Separator Margin="0,6,0,10" />
+
+                            <!-- Custom title editor -->
+                            <Label Content="C_ustom title" Target="{Binding ElementName=OverrideBox}" Margin="0,0,0,4" />
+                            <TextBox x:Name="OverrideBox" Text="{Binding TitleOverrideText, UpdateSourceTrigger=PropertyChanged}"
+                                     IsEnabled="{Binding Project.EditsEnabled}"
+                                     AutomationProperties.Name="Custom title" views:TextBoxAssist.Placeholder="Override LiveChart title..."
+                                     KeyDown="OnOverrideKeyDown" />
+                            <WrapPanel Margin="0,6,0,0">
+                                <Button Style="{StaticResource PrimaryButton}" Content="Set title" Command="{Binding SetTitleOverrideCommand}" Margin="0,0,6,0" />
+                                <Button Content="Use LiveChart title" Command="{Binding ClearTitleOverrideCommand}" />
+                            </WrapPanel>
+
+                            <Separator Margin="0,10,0,10" />
+
+                            <!-- Cover condition & reviewed recovery -->
+                            <TextBlock Style="{StaticResource Text.Section}" Text="COVER &amp; RECOVERY" Margin="0,0,0,6" />
+                            <TextBlock Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Text="{Binding SelectedCoverText}" />
+                            <Border Background="{DynamicResource Brush.BgRaised}" BorderBrush="{DynamicResource Brush.WarningBorder}"
+                                    BorderThickness="1" CornerRadius="6" Padding="8" Margin="0,8,0,0"
+                                    Visibility="{Binding OfferThumbnail, Converter={StaticResource IfAny}}">
+                                <DockPanel>
+                                    <Image DockPanel.Dock="Left" Width="52" Height="74" Margin="0,0,8,0" Stretch="Uniform"
+                                           Source="{Binding OfferThumbnail}" AutomationProperties.Name="New cover offered by LiveChart" />
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Style="{StaticResource Text.Caption}" Text="LiveChart replacement cover" FontWeight="SemiBold" />
+                                        <Button Style="{StaticResource PrimaryButton}" Content="Use new cover" Command="{Binding UseNewCoverCommand}" Margin="0,6,0,0" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+                            <Button Style="{StaticResource DangerButton}" Content="Mark cover missing..." Command="{Binding MarkCoverMissingCommand}"
+                                    Margin="0,8,0,0" HorizontalAlignment="Left"
+                                    Visibility="{Binding SelectedCoverBroken, Converter={StaticResource Visible}}" />
+
+                            <Separator Margin="0,10,0,10" />
+
+                            <!-- Captured source titles & referencing boards -->
+                            <TextBlock Style="{StaticResource Text.Section}" Text="CAPTURED LIVECHART TITLES" Margin="0,0,0,4" />
+                            <TextBlock Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Text="{Binding SelectedEntry.ObservedDisplayed, StringFormat=Default: {0}}" />
+                            <TextBlock Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Margin="0,2,0,0"
+                                       Text="{Binding SelectedEntry.ObservedEnglish, StringFormat=English: {0}}"
+                                       Visibility="{Binding SelectedEntry.ObservedEnglish, Converter={StaticResource IfAny}}" />
+                            <TextBlock Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Margin="0,2,0,0"
+                                       Text="{Binding SelectedEntry.ObservedRomanized, StringFormat=Romaji: {0}}"
+                                       Visibility="{Binding SelectedEntry.ObservedRomanized, Converter={StaticResource IfAny}}" />
+                            <TextBlock Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Margin="0,2,0,0"
+                                       Text="{Binding SelectedEntry.ObservedNative, StringFormat=Native: {0}}"
+                                       Visibility="{Binding SelectedEntry.ObservedNative, Converter={StaticResource IfAny}}" />
+
+                            <TextBlock Style="{StaticResource Text.Section}" Text="USED BY BOARDS" Margin="0,10,0,4" />
+                            <TextBlock Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Text="{Binding SelectedReferencingBoards}" />
+                        </StackPanel>
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
+        </Grid>
+    </DockPanel>
+</UserControl>

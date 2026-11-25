@@ -1,0 +1,20 @@
+<!doctype html>
+<!--
+  Packaged in-app YouTube player page. Served only from the WebView2 virtual host
+  https://player.animetierlist.invalid/. It embeds the official privacy-enhanced YouTube player for one
+  validated video ID and posts only "ready", "started", "unreachable", or "error:N" back to the app.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self' https://www.youtube.com https://s.ytimg.com; frame-src https://www.youtube-nocookie.com; style-src 'self'; base-uri 'none'; form-action 'none'">
+  <title>Player</title>
+  <link rel="stylesheet" href="player.css">
+</head>
+<body>
+  <div id="player"></div>
+  <script src="player.js"></script>
+</body>
+</html>

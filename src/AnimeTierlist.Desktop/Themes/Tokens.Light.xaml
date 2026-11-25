@@ -1,0 +1,52 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:po="http://schemas.microsoft.com/winfx/2006/xaml/presentation/options">
+    <!-- Light theme semantic palette: verified WCAG 2.1 AA (>= 4.5:1 text, >= 3.0:1 borders/focus). -->
+    <SolidColorBrush x:Key="Brush.BgCanvas" Color="#F3F5F8" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.BgSurface" Color="#FFFFFF" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.BgRaised" Color="#EEF1F6" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.BgInput" Color="#FFFFFF" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.BgHover" Color="#E3E8F0" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.BgSelected" Color="#DCE8FF" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.BgOverlay" Color="#77101828" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.BgPosterMat" Color="#E9EDF4" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.PoolHeader" Color="#E4E8EF" po:Freeze="True" />
+
+    <SolidColorBrush x:Key="Brush.BorderSubtle" Color="#D5DCE6" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.BorderControl" Color="#6D778A" po:Freeze="True" />
+
+    <SolidColorBrush x:Key="Brush.TextPrimary" Color="#131924" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.TextSecondary" Color="#485569" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.TextMuted" Color="#576377" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.TextOnHover" Color="#131924" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.TextOnSelected" Color="#131924" po:Freeze="True" />
+
+    <SolidColorBrush x:Key="Brush.AccentFill" Color="#2552C8" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.AccentHover" Color="#1D42A6" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.OnAccent" Color="#FFFFFF" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.AccentText" Color="#1E46B3" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.AccentSurface" Color="#EAF0FF" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.FocusRing" Color="#1D4ED8" po:Freeze="True" />
+
+    <SolidColorBrush x:Key="Brush.SuccessText" Color="#146C3B" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.SuccessSurface" Color="#EBF9F1" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.SuccessBorder" Color="#15803D" po:Freeze="True" />
+
+    <SolidColorBrush x:Key="Brush.WarningText" Color="#854D0E" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.WarningSurface" Color="#FEF7E6" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.WarningBorder" Color="#B45309" po:Freeze="True" />
+
+    <SolidColorBrush x:Key="Brush.DangerFill" Color="#B91C1C" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.DangerHover" Color="#991B1B" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.OnDanger" Color="#FFFFFF" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.DangerText" Color="#B42318" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.DangerSurface" Color="#FEEFEF" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.DangerBorder" Color="#D92D20" po:Freeze="True" />
+
+    <SolidColorBrush x:Key="Brush.BadgeOverlay" Color="#D90F131A" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.BadgeOverlayText" Color="#FFFFFF" po:Freeze="True" />
+
+    <SolidColorBrush x:Key="Brush.DisabledBg" Color="#E9EDF3" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.DisabledBorder" Color="#C4CDD9" po:Freeze="True" />
+    <SolidColorBrush x:Key="Brush.DisabledText" Color="#5A6577" po:Freeze="True" />
+</ResourceDictionary>

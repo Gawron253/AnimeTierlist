@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Domain rules only: no WPF, SQL, HTTP, or filesystem dependencies. -->
+  <PropertyGroup>
+    <RootNamespace>AnimeTierlist.Core</RootNamespace>
+  </PropertyGroup>
+</Project>

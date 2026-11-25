@@ -1,0 +1,210 @@
+<UserControl x:Class="AnimeTierlist.Desktop.Views.ProjectPickerView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:AnimeTierlist.Desktop.ViewModels"
+             xmlns:views="clr-namespace:AnimeTierlist.Desktop.Views"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance Type=vm:ShellViewModel}"
+             Background="{DynamicResource Brush.BgCanvas}"
+             SizeChanged="OnSizeChanged">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="Visible" />
+        <views:InverseBooleanToVisibilityConverter x:Key="Hidden" />
+        <views:NotEmptyToVisibilityConverter x:Key="IfAny" />
+    </UserControl.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <Grid MaxWidth="820" Margin="20,16" VerticalAlignment="Center">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <!-- Header -->
+            <Grid Margin="0,0,0,14">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Style="{StaticResource Text.Display}" Text="AnimeTierlist" />
+                        <Border Background="{DynamicResource Brush.BgRaised}" BorderBrush="{DynamicResource Brush.BorderSubtle}"
+                                BorderThickness="1" CornerRadius="10" Padding="8,2" Margin="10,4,0,0" VerticalAlignment="Center">
+                            <TextBlock Style="{StaticResource Text.Caption}" Text="{Binding Version, StringFormat=v{0}}" />
+                        </Border>
+                    </StackPanel>
+                    <TextBlock Style="{StaticResource Text.Caption}" Margin="0,2,0,0" TextWrapping="Wrap"
+                               Text="Acquire LiveChart anime seasons in popularity order, curate covers offline, build local tier boards, and export PNGs or portable archives." />
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top" Margin="12,2,0,0">
+                    <Button Style="{StaticResource SubtleButton}" Command="{Binding CycleThemeCommand}" Margin="0,0,6,0"
+                            ToolTip="Switch between Dark, Light, and System theme" AutomationProperties.Name="{Binding ThemeLabel}">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Data="{StaticResource Icon.Theme}" Width="14" Height="14" Stretch="Uniform" Margin="0,0,6,0"
+                                  Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.7" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding ThemeLabel}" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource SubtleButton}" Command="{Binding ShowShortcutsCommand}"
+                            ToolTip="Keyboard shortcuts (F1)" AutomationProperties.Name="Keyboard shortcuts">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Data="{StaticResource Icon.Keyboard}" Width="14" Height="14" Stretch="Uniform" Margin="0,0,6,0"
+                                  Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.7" VerticalAlignment="Center" />
+                            <TextBlock Text="Shortcuts" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Grid>
+
+            <!-- Responsive two-column card body (stacks cleanly below 760 DIP) -->
+            <Grid x:Name="ColumnsGrid" Grid.Row="1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition x:Name="LeftColumn" Width="1.35*" />
+                    <ColumnDefinition x:Name="SpacerColumn" Width="16" />
+                    <ColumnDefinition x:Name="RightColumn" Width="*" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition x:Name="StackedSpacerRow" Height="0" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <!-- Left card: Open existing or import -->
+                <Border x:Name="OpenCard" Grid.Row="0" Grid.Column="0" Background="{DynamicResource Brush.BgSurface}"
+                        BorderBrush="{DynamicResource Brush.BorderSubtle}" BorderThickness="1" CornerRadius="8" Padding="16">
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Top" Style="{StaticResource Text.Subtitle}" Text="Open a project" Margin="0,0,0,8" />
+
+                        <TextBox DockPanel.Dock="Top" Margin="0,0,0,8" Text="{Binding ProjectSearchText, UpdateSourceTrigger=PropertyChanged}"
+                                 views:TextBoxAssist.Placeholder="Filter projects..."
+                                 AutomationProperties.Name="Filter projects"
+                                 Visibility="{Binding ShowProjectSearch, Converter={StaticResource Visible}}" />
+
+                        <WrapPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
+                            <Button Style="{StaticResource PrimaryButton}" Content="_Open" Command="{Binding OpenProjectCommand}" Margin="0,0,8,0" />
+                            <Button Content="_Import project..." Command="{Binding ImportProjectCommand}"
+                                    ToolTip="Adds a project from an .animerank file as a new local project folder." />
+                        </WrapPanel>
+
+                        <Grid MinHeight="140" MaxHeight="260">
+                            <ListBox x:Name="ProjectList" ItemsSource="{Binding ProjectsView}" SelectedItem="{Binding SelectedProjectItem}"
+                                     AutomationProperties.Name="Projects" MouseDoubleClick="OnProjectDoubleClick" KeyDown="OnProjectListKeyDown"
+                                     Visibility="{Binding HasProjects, Converter={StaticResource Visible}}"
+                                     VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
+                                <ListBox.ItemContainerStyle>
+                                    <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                                        <Setter Property="AutomationProperties.Name" Value="{Binding Name}" />
+                                    </Style>
+                                </ListBox.ItemContainerStyle>
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate DataType="{x:Type vm:ProjectSummaryItem}">
+                                        <Grid Margin="2,2">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock FontSize="13" FontWeight="SemiBold" Text="{Binding Name}" TextTrimming="CharacterEllipsis"
+                                                       Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" />
+                                            <TextBlock Grid.Column="1" FontSize="12" Opacity="0.82" Text="{Binding LastSavedText}" Margin="12,0,0,0" VerticalAlignment="Center"
+                                                       Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+
+                            <!-- Empty state when no projects exist yet -->
+                            <Border Background="{DynamicResource Brush.BgRaised}" BorderBrush="{DynamicResource Brush.BorderSubtle}"
+                                    BorderThickness="1" CornerRadius="6" Padding="16"
+                                    Visibility="{Binding HasProjects, Converter={StaticResource Hidden}}">
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Style="{StaticResource Text.BodyStrong}" Text="No local projects yet" />
+                                    <TextBlock Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Margin="0,4,0,0"
+                                               Text="Create a project on the right, or import a portable .animerank archive to add one as a new local project." />
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                    </DockPanel>
+                </Border>
+
+                <!-- Right card: Create new project -->
+                <Border x:Name="CreateCard" Grid.Row="0" Grid.Column="2" Background="{DynamicResource Brush.BgSurface}"
+                        BorderBrush="{DynamicResource Brush.BorderSubtle}" BorderThickness="1" CornerRadius="8" Padding="16">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource Text.Subtitle}" Text="Create a project" Margin="0,0,0,8" />
+                        <Label Content="Project name" Target="{Binding ElementName=NewProjectBox}" Margin="0,0,0,4" />
+                        <TextBox x:Name="NewProjectBox" Text="{Binding NewProjectName, UpdateSourceTrigger=PropertyChanged}"
+                                 views:TextBoxAssist.Placeholder="e.g. 2026 Anime Rankings"
+                                 AutomationProperties.Name="New project name" KeyDown="OnNewProjectKeyDown" />
+                        <TextBlock Margin="0,4,0,0" TextWrapping="Wrap" Text="{Binding NewProjectValidationNote}"
+                                   Visibility="{Binding NewProjectValidationNote, Converter={StaticResource IfAny}}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource Text.Caption}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasNewProjectValidationError}" Value="True">
+                                            <Setter Property="Foreground" Value="{DynamicResource Brush.DangerText}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <Button Style="{StaticResource PrimaryButton}" Content="_Create" Command="{Binding CreateProjectCommand}"
+                                HorizontalAlignment="Left" Margin="0,12,0,0" MinWidth="110" />
+
+                        <Border Background="{DynamicResource Brush.BgRaised}" BorderBrush="{DynamicResource Brush.BorderSubtle}"
+                                BorderThickness="1" CornerRadius="6" Padding="12,10" Margin="0,16,0,0">
+                            <StackPanel>
+                                <TextBlock Style="{StaticResource Text.Section}" Text="WORKFLOW" Margin="0,0,0,6" />
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource Text.Caption}" Text="1." Margin="0,0,6,3" />
+                                    <TextBlock Grid.Row="0" Grid.Column="1" Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Margin="0,0,0,3"
+                                               Text="Fetch a LiveChart season or full year in popularity order." />
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource Text.Caption}" Text="2." Margin="0,0,6,3" />
+                                    <TextBlock Grid.Row="1" Grid.Column="1" Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Margin="0,0,0,3"
+                                               Text="Curate covers, titles, and inclusion offline." />
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Style="{StaticResource Text.Caption}" Text="3." Margin="0,0,6,0" />
+                                    <TextBlock Grid.Row="2" Grid.Column="1" Style="{StaticResource Text.Caption}" TextWrapping="Wrap"
+                                               Text="Build ranking boards and export PNGs or .animerank archives." />
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- Footer: portable data root location -->
+            <Border Grid.Row="2" Margin="0,14,0,0" Background="{DynamicResource Brush.BgSurface}"
+                    BorderBrush="{DynamicResource Brush.BorderSubtle}" BorderThickness="1" CornerRadius="6" Padding="12,8">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Style="{StaticResource Text.Caption}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                               ToolTip="{Binding ProjectsFolder}"
+                               Text="{Binding ProjectsFolder, StringFormat=Projects folder: {0}}" />
+                    <Button Grid.Column="1" Style="{StaticResource LinkButton}" Command="{Binding OpenProjectsFolderCommand}" Margin="10,0,0,0"
+                            ToolTip="Open the portable projects folder in File Explorer">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Data="{StaticResource Icon.Folder}" Width="13" Height="13" Stretch="Uniform" Margin="0,0,5,0"
+                                  Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.7" VerticalAlignment="Center" />
+                            <TextBlock Text="Open folder" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                </Grid>
+            </Border>
+        </Grid>
+    </ScrollViewer>
+</UserControl>

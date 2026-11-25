@@ -1,0 +1,779 @@
+<UserControl x:Class="AnimeTierlist.Desktop.Views.BoardView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:AnimeTierlist.Desktop.ViewModels"
+             xmlns:views="clr-namespace:AnimeTierlist.Desktop.Views"
+             xmlns:services="clr-namespace:AnimeTierlist.Desktop.Services"
+             xmlns:controls="clr-namespace:AnimeTierlist.Desktop.Controls"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance Type=vm:BoardViewModel}"
+             Background="{DynamicResource Brush.BgCanvas}"
+             x:Name="Root"
+             SizeChanged="OnSizeChanged"
+             PreviewKeyDown="OnPreviewKeyDown">
+    <UserControl.Resources>
+        <views:BindingProxy x:Key="BoardProxy" Data="{Binding}" />
+        <BooleanToVisibilityConverter x:Key="Visible" />
+        <views:InverseBooleanToVisibilityConverter x:Key="Hidden" />
+        <views:NotEmptyToVisibilityConverter x:Key="IfAny" />
+        <views:EqualsToBooleanConverter x:Key="EqBool" />
+        <views:TierColorToBrushConverter x:Key="TierColorBrush" />
+        <views:TierInkToBrushConverter x:Key="TierInkBrush" />
+        <views:SameObjectConverter x:Key="SameObject" />
+        <views:DimmedToOpacityConverter x:Key="DimmedOpacity" />
+
+        <!-- Board show poster card (dims artwork only on search non-matches so titles stay >= 4.5:1 WCAG AA) -->
+        <DataTemplate x:Key="EntryTemplate" DataType="{x:Type vm:BoardEntryViewModel}">
+            <Border Width="{Binding DataContext.CardWidth, ElementName=Root}" Margin="2" Padding="4,3" CornerRadius="6"
+                    ToolTip="{Binding CoverToolTip}" SnapsToDevicePixels="True">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Background" Value="{DynamicResource Brush.BgRaised}" />
+                        <Setter Property="BorderBrush" Value="{DynamicResource Brush.BorderSubtle}" />
+                        <Setter Property="BorderThickness" Value="1" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsSearchMatch}" Value="True">
+                                <Setter Property="BorderBrush" Value="{DynamicResource Brush.AccentFill}" />
+                                <Setter Property="BorderThickness" Value="2" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding IsBrokenCover}" Value="True">
+                                <Setter Property="BorderBrush" Value="{DynamicResource Brush.DangerBorder}" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <StackPanel>
+                    <Border Width="{Binding DataContext.CardCoverWidth, ElementName=Root}"
+                            Height="{Binding DataContext.CardCoverHeight, ElementName=Root}"
+                            CornerRadius="4" Background="{DynamicResource Brush.BgPosterMat}" ClipToBounds="True">
+                        <Grid>
+                            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="2"
+                                        ToolTip="{Binding CoverPlaceholder}"
+                                        Visibility="{Binding HasCover, Converter={StaticResource Hidden}}">
+                                <Path Width="14" Height="14" Stretch="Uniform" HorizontalAlignment="Center">
+                                    <Path.Style>
+                                        <Style TargetType="Path">
+                                            <Setter Property="Data" Value="{StaticResource Icon.ImageOff}" />
+                                            <Setter Property="Stroke" Value="{DynamicResource Brush.TextMuted}" />
+                                            <Setter Property="StrokeThickness" Value="1.5" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsBrokenCover}" Value="True">
+                                                    <Setter Property="Data" Value="{StaticResource Icon.Warning}" />
+                                                    <Setter Property="Stroke" Value="{DynamicResource Brush.DangerText}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Path.Style>
+                                </Path>
+                                <TextBlock Style="{StaticResource Text.Caption}" FontSize="11" Text="{Binding CoverPlaceholder}"
+                                           TextAlignment="Center" TextWrapping="Wrap" Margin="0,4,0,0"
+                                           Visibility="{Binding DataContext.IsNotCompactViewport, ElementName=Root, Converter={StaticResource Visible}}" />
+                            </StackPanel>
+                            <Image Source="{Binding Thumbnail}" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"
+                                   Opacity="{Binding IsDimmed, Converter={StaticResource DimmedOpacity}}" />
+                            <controls:CopyNumberOverlay CopyNumber="{Binding CopyNumber}"
+                                                        Visibility="{Binding IsDuplicate, Converter={StaticResource Visible}}" />
+                        </Grid>
+                    </Border>
+                    <TextBlock x:Name="BoardCardTitle" Text="{Binding Title}" TextAlignment="Center"
+                               MaxHeight="{Binding DataContext.CardTitleMaxHeight, ElementName=Root}" Margin="0,3,0,0" ToolTip="{Binding CoverToolTip}">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource Text.CardTitle}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsDimmed}" Value="True">
+                                        <Setter Property="Foreground" Value="{DynamicResource Brush.TextSecondary}" />
+                                        <Setter Property="FontWeight" Value="Normal" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+
+        <!-- One tier row: clickable colored header with adaptive WCAG ink + shortcut keycap + drop zone -->
+        <DataTemplate x:Key="RowTemplate" DataType="{x:Type vm:TierViewModel}">
+            <Border CornerRadius="6" BorderThickness="1.5" Margin="0,0,0,3" SnapsToDevicePixels="True">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Background" Value="{DynamicResource Brush.BgSurface}" />
+                        <Setter Property="BorderBrush" Value="{DynamicResource Brush.BorderSubtle}" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsDragTarget}" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource Brush.AccentSurface}" />
+                                <Setter Property="BorderBrush" Value="{DynamicResource Brush.AccentFill}" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="116" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Focusable tier header button: non-color identification (name + keycap + count) -->
+                    <Button Command="{Binding DataContext.SelectTierAndInspectCommand, ElementName=Root}" CommandParameter="{Binding}"
+                            Background="{Binding Background}" Foreground="{Binding HeaderForeground}"
+                            BorderBrush="{DynamicResource Brush.BorderSubtle}" BorderThickness="0,0,1,0"
+                            Padding="8,8" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
+                            AutomationProperties.Name="{Binding AccessibleName}"
+                            ToolTip="Click to edit tier name, color, or order. Right-click for tier menu."
+                            AllowDrop="True" DragOver="OnTierHeaderDragOver" Drop="OnTierHeaderDrop">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border x:Name="TierHdrBd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                        BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="5,0,0,5" SnapsToDevicePixels="True">
+                                    <Grid>
+                                        <Border x:Name="InteractionRing" BorderBrush="{Binding HeaderForeground}" BorderThickness="0"
+                                                Margin="2" CornerRadius="4" IsHitTestVisible="False" />
+                                        <Border x:Name="SelectedBar" Width="4" HorizontalAlignment="Left" Background="{Binding HeaderForeground}"
+                                                CornerRadius="5,0,0,5" Visibility="{Binding IsSelectedTier, Converter={StaticResource Visible}}" IsHitTestVisible="False" />
+                                        <ContentPresenter Margin="{TemplateBinding Padding}" />
+                                    </Grid>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="InteractionRing" Property="BorderThickness" Value="1.5" />
+                                    </Trigger>
+                                    <Trigger Property="IsPressed" Value="True">
+                                        <Setter TargetName="InteractionRing" Property="BorderThickness" Value="2.5" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                        <Button.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="Edit tier..." Command="{Binding Data.SelectTierAndInspectCommand, Source={StaticResource BoardProxy}}" CommandParameter="{Binding}" />
+                                <MenuItem Header="Add tier below" Command="{Binding Data.AddTierBelowCommand, Source={StaticResource BoardProxy}}" CommandParameter="{Binding}" />
+                                <Separator />
+                                <MenuItem Header="Move tier up" Command="{Binding Data.MoveTierItemUpCommand, Source={StaticResource BoardProxy}}" CommandParameter="{Binding}" />
+                                <MenuItem Header="Move tier down" Command="{Binding Data.MoveTierItemDownCommand, Source={StaticResource BoardProxy}}" CommandParameter="{Binding}" />
+                                <Separator />
+                                <MenuItem Header="Delete tier..." Command="{Binding Data.DeleteTierItemCommand, Source={StaticResource BoardProxy}}" CommandParameter="{Binding}"
+                                          Foreground="{DynamicResource Brush.DangerText}" />
+                            </ContextMenu>
+                        </Button.ContextMenu>
+                        <Grid>
+                            <!-- Shortcut keycap badge (1-9) -->
+                            <Border HorizontalAlignment="Left" VerticalAlignment="Top" CornerRadius="3" Padding="4,1"
+                                    BorderBrush="{Binding HeaderForeground}" BorderThickness="1"
+                                    Visibility="{Binding HasShortcut, Converter={StaticResource Visible}}">
+                                <TextBlock FontFamily="{StaticResource Font.Mono}" FontSize="11" FontWeight="SemiBold"
+                                           Foreground="{Binding HeaderForeground}" Text="{Binding ShortcutText}" />
+                            </Border>
+                            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="0,14,0,2">
+                                <TextBlock Text="{Binding Name}" Foreground="{Binding HeaderForeground}" FontWeight="Bold" FontSize="16"
+                                           TextAlignment="Center" TextWrapping="Wrap" />
+                                <TextBlock Text="{Binding CountText}" Foreground="{Binding HeaderForeground}"
+                                           FontSize="12" FontWeight="Medium" TextAlignment="Center" Margin="0,2,0,0" />
+                            </StackPanel>
+                        </Grid>
+                    </Button>
+
+                    <!-- Show cards drop zone -->
+                    <Grid Grid.Column="1">
+                        <TextBlock Style="{StaticResource Text.Muted}" Text="{Binding EmptyHint}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   IsHitTestVisible="False" TextWrapping="Wrap" Margin="12"
+                                   Visibility="{Binding IsEmpty, Converter={StaticResource Visible}}" />
+
+                        <ListBox MinHeight="{Binding DataContext.RowMinHeight, ElementName=Root}" ItemsSource="{Binding Entries}" SelectedItem="{Binding SelectedEntry}"
+                                 ItemTemplate="{StaticResource EntryTemplate}" SelectionMode="Single" AllowDrop="True"
+                                 Background="Transparent" BorderThickness="0" Padding="6,2"
+                                 AutomationProperties.Name="{Binding AccessibleName}"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                                 PreviewMouseLeftButtonDown="OnEntryMouseDown" PreviewMouseMove="OnEntryMouseMove"
+                                 DragOver="OnRowDragOver" DragLeave="OnRowDragLeave" Drop="OnRowDrop"
+                                 PreviewMouseWheel="OnRowMouseWheel">
+                            <ListBox.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel />
+                                </ItemsPanelTemplate>
+                            </ListBox.ItemsPanel>
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="Padding" Value="0" />
+                                    <Setter Property="Margin" Value="0" />
+                                    <Setter Property="Background" Value="Transparent" />
+                                    <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRingStyle}" />
+                                    <Setter Property="AutomationProperties.Name" Value="{Binding AccessibleName}" />
+                                    <Setter Property="AutomationProperties.ItemStatus" Value="{Binding ItemStatus}" />
+                                    <EventSetter Event="GotKeyboardFocus" Handler="OnEntryGotKeyboardFocus" />
+                                    <EventSetter Event="MouseDoubleClick" Handler="OnEntryDoubleClick" />
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="ListBoxItem">
+                                                <Border x:Name="CardSel" CornerRadius="7" BorderThickness="2" BorderBrush="Transparent">
+                                                    <ContentPresenter />
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsSelected" Value="True">
+                                                        <Setter TargetName="CardSel" Property="BorderBrush" Value="{DynamicResource Brush.AccentFill}" />
+                                                        <Setter TargetName="CardSel" Property="Background" Value="{DynamicResource Brush.BgSelected}" />
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                            <ListBox.InputBindings>
+                                <KeyBinding Key="D1" Command="{Binding DataContext.MoveToTierCommand, ElementName=Root}" CommandParameter="1" />
+                                <KeyBinding Key="D2" Command="{Binding DataContext.MoveToTierCommand, ElementName=Root}" CommandParameter="2" />
+                                <KeyBinding Key="D3" Command="{Binding DataContext.MoveToTierCommand, ElementName=Root}" CommandParameter="3" />
+                                <KeyBinding Key="D4" Command="{Binding DataContext.MoveToTierCommand, ElementName=Root}" CommandParameter="4" />
+                                <KeyBinding Key="D5" Command="{Binding DataContext.MoveToTierCommand, ElementName=Root}" CommandParameter="5" />
+                                <KeyBinding Key="D6" Command="{Binding DataContext.MoveToTierCommand, ElementName=Root}" CommandParameter="6" />
+                                <KeyBinding Key="D7" Command="{Binding DataContext.MoveToTierCommand, ElementName=Root}" CommandParameter="7" />
+                                <KeyBinding Key="D8" Command="{Binding DataContext.MoveToTierCommand, ElementName=Root}" CommandParameter="8" />
+                                <KeyBinding Key="D9" Command="{Binding DataContext.MoveToTierCommand, ElementName=Root}" CommandParameter="9" />
+                                <KeyBinding Key="NumPad1" Command="{Binding DataContext.MoveToTierCommand, ElementName=Root}" CommandParameter="1" />
+                                <KeyBinding Key="NumPad2" Command="{Binding DataContext.MoveToTierCommand, ElementName=Root}" CommandParameter="2" />
+                                <KeyBinding Key="NumPad3" Command="{Binding DataContext.MoveToTierCommand, ElementName=Root}" CommandParameter="3" />
+                                <KeyBinding Key="NumPad4" Command="{Binding DataContext.MoveToTierCommand, ElementName=Root}" CommandParameter="4" />
+                                <KeyBinding Key="NumPad5" Command="{Binding DataContext.MoveToTierCommand, ElementName=Root}" CommandParameter="5" />
+                                <KeyBinding Key="NumPad6" Command="{Binding DataContext.MoveToTierCommand, ElementName=Root}" CommandParameter="6" />
+                                <KeyBinding Key="NumPad7" Command="{Binding DataContext.MoveToTierCommand, ElementName=Root}" CommandParameter="7" />
+                                <KeyBinding Key="NumPad8" Command="{Binding DataContext.MoveToTierCommand, ElementName=Root}" CommandParameter="8" />
+                                <KeyBinding Key="NumPad9" Command="{Binding DataContext.MoveToTierCommand, ElementName=Root}" CommandParameter="9" />
+                                <KeyBinding Key="D0" Command="{Binding DataContext.MoveToUnrankedCommand, ElementName=Root}" />
+                                <KeyBinding Key="NumPad0" Command="{Binding DataContext.MoveToUnrankedCommand, ElementName=Root}" />
+                                <KeyBinding Key="Left" Modifiers="Control" Command="{Binding DataContext.MoveLeftCommand, ElementName=Root}" />
+                                <KeyBinding Key="Right" Modifiers="Control" Command="{Binding DataContext.MoveRightCommand, ElementName=Root}" />
+                                <KeyBinding Key="Up" Modifiers="Alt" Command="{Binding DataContext.MoveToTierAboveCommand, ElementName=Root}" />
+                                <KeyBinding Key="Down" Modifiers="Alt" Command="{Binding DataContext.MoveToTierBelowCommand, ElementName=Root}" />
+                                <KeyBinding Key="Return" Command="{Binding DataContext.OpenSelectedEntryDetailsCommand, ElementName=Root}" />
+                            </ListBox.InputBindings>
+                        </ListBox>
+                    </Grid>
+                </Grid>
+            </Border>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <DockPanel Margin="14,10">
+        <!-- Compact single-row board header -->
+        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel VerticalAlignment="Center" Margin="0,0,10,0">
+                    <!-- Title + inline rename -->
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
+                                Visibility="{Binding IsRenamingInline, Converter={StaticResource Hidden}}">
+                        <TextBlock Style="{StaticResource Text.Title}" Text="{Binding Name}" TextTrimming="CharacterEllipsis" MaxWidth="340" />
+                        <Button Style="{StaticResource IconButton}" Command="{Binding BeginInlineRenameCommand}" Margin="4,0,0,0"
+                                ToolTip="Rename board (F2)" AutomationProperties.Name="Rename board">
+                            <Path Data="{StaticResource Icon.Edit}" Width="13" Height="13" Stretch="Uniform"
+                                  Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.7" />
+                        </Button>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
+                                Visibility="{Binding IsRenamingInline, Converter={StaticResource Visible}}">
+                        <TextBox x:Name="InlineRenameBox" Width="220" Text="{Binding RenameText, UpdateSourceTrigger=PropertyChanged}"
+                                 AutomationProperties.Name="Board name" KeyDown="OnInlineRenameKeyDown" />
+                        <Button Style="{StaticResource PrimaryButton}" Content="Save" Command="{Binding CommitInlineRenameCommand}" Margin="6,0,4,0" />
+                        <Button Content="Cancel" Command="{Binding CancelInlineRenameCommand}" />
+                    </StackPanel>
+
+                    <!-- Source collection link + ranked progress -->
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,2,0,0">
+                        <Button Style="{StaticResource LinkButton}" Command="{Binding OpenSourceCollectionCommand}" Padding="0"
+                                ToolTip="Open source collection" Content="{Binding SourceCollectionButtonLabel}" />
+                        <TextBlock Style="{StaticResource Text.Caption}" Margin="8,0,8,0" VerticalAlignment="Center">
+                            <Run Text="· " />
+                            <Run Text="{Binding RankedCount, Mode=OneWay}" />
+                            <Run Text=" of " />
+                            <Run Text="{Binding TotalCount, Mode=OneWay}" />
+                            <Run Text=" ranked" />
+                        </TextBlock>
+                        <ProgressBar Width="72" Height="5" Minimum="0" Maximum="100" Value="{Binding RankedPercent}" VerticalAlignment="Center"
+                                     AutomationProperties.Name="Ranked progress" />
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Right command controls -->
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <!-- Board Find (visual highlight only) -->
+                    <Grid Width="156" Margin="0,0,6,0">
+                        <TextBox x:Name="BoardFindBox" Text="{Binding BoardSearchText, UpdateSourceTrigger=PropertyChanged}"
+                                 Padding="8,4,24,4" views:TextBoxAssist.Placeholder="Find show (Ctrl+F)"
+                                 AutomationProperties.Name="Find show on board" KeyDown="OnBoardFindKeyDown"
+                                 ToolTip="Highlights matches without moving shows or changing PNG export. Enter jumps to next match." />
+                        <Button Style="{StaticResource IconButton}" Width="22" Height="22" MinHeight="22" HorizontalAlignment="Right" Margin="0,0,3,0"
+                                Command="{Binding ClearBoardSearchCommand}" Visibility="{Binding HasBoardSearch, Converter={StaticResource Visible}}"
+                                AutomationProperties.Name="Clear board search">
+                            <Path Data="{StaticResource Icon.Close}" Width="9" Height="9" Stretch="Uniform"
+                                  Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.8" />
+                        </Button>
+                    </Grid>
+
+                    <!-- Card size toggle S / M / L (keeps 1px checked border in High Contrast and reflects EffectiveDensity honestly) -->
+                    <Border Background="{DynamicResource Brush.BgRaised}" BorderBrush="{DynamicResource Brush.BorderSubtle}"
+                            BorderThickness="1" CornerRadius="5" Padding="2" Margin="0,0,6,0">
+                        <StackPanel Orientation="Horizontal">
+                            <RadioButton Style="{StaticResource SegmentedRadioStyle}" GroupName="BoardDensity" BorderBrush="Transparent" Padding="6,2" MinHeight="24"
+                                         Content="S" ToolTip="Compact board cards" AutomationProperties.Name="Compact board cards"
+                                         Command="{Binding SetDensityCommand}" CommandParameter="{x:Static services:CardDensity.Compact}"
+                                         IsChecked="{Binding EffectiveDensity, Converter={StaticResource EqBool}, ConverterParameter=Compact, Mode=OneWay}" />
+                            <RadioButton Style="{StaticResource SegmentedRadioStyle}" GroupName="BoardDensity" BorderBrush="Transparent" Padding="6,2" MinHeight="24"
+                                         Content="M" ToolTip="Standard board cards (requires a taller window when disabled)"
+                                         ToolTipService.ShowOnDisabled="True"
+                                         AutomationProperties.Name="Standard board cards"
+                                         AutomationProperties.HelpText="Requires a taller window when disabled"
+                                         IsEnabled="{Binding IsNotCompactViewport}"
+                                         Command="{Binding SetDensityCommand}" CommandParameter="{x:Static services:CardDensity.Standard}"
+                                         IsChecked="{Binding EffectiveDensity, Converter={StaticResource EqBool}, ConverterParameter=Standard, Mode=OneWay}" />
+                            <RadioButton Style="{StaticResource SegmentedRadioStyle}" GroupName="BoardDensity" BorderBrush="Transparent" Padding="6,2" MinHeight="24"
+                                         Content="L" ToolTip="Large board cards (requires a taller window when disabled)"
+                                         ToolTipService.ShowOnDisabled="True"
+                                         AutomationProperties.Name="Large board cards"
+                                         AutomationProperties.HelpText="Requires a taller window when disabled"
+                                         IsEnabled="{Binding IsNotCompactViewport}"
+                                         Command="{Binding SetDensityCommand}" CommandParameter="{x:Static services:CardDensity.Large}"
+                                         IsChecked="{Binding EffectiveDensity, Converter={StaticResource EqBool}, ConverterParameter=Large, Mode=OneWay}" />
+                        </StackPanel>
+                    </Border>
+
+                    <Button Content="_Update..." Command="{Binding UpdateFromCollectionCommand}" Margin="0,0,6,0"
+                            ToolTip="Reviewed update from source collection (additions, removals, pinned titles/covers)" />
+                    <Button Style="{StaticResource PrimaryButton}" Content="Export _PNG..." Command="{Binding ExportPngCommand}" Margin="0,0,6,0" />
+                    <Button Content="Ti_ers" Command="{Binding OpenTierEditorCommand}" Margin="0,0,4,0"
+                            ToolTip="Open tier and show inspector (Alt+E)" />
+                    <Button x:Name="BoardMoreButton" Style="{StaticResource IconButton}" Click="OnBoardMoreClick"
+                            ToolTip="More board actions" AutomationProperties.Name="More board actions">
+                        <Path Data="{StaticResource Icon.More}" Width="14" Height="14" Stretch="Uniform"
+                              Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="2" />
+                        <Button.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="Add tier" Command="{Binding AppendNewTierCommand}" />
+                                <MenuItem Header="Toggle unranked tray" Command="{Binding ToggleTrayCommand}" InputGestureText="Ctrl+U" />
+                                <MenuItem Header="Rename board..." Command="{Binding BeginInlineRenameCommand}" InputGestureText="F2" />
+                                <Separator />
+                                <MenuItem Header="Delete board..." Command="{Binding DeleteCommand}" Foreground="{DynamicResource Brush.DangerText}" />
+                            </ContextMenu>
+                        </Button.ContextMenu>
+                    </Button>
+                </StackPanel>
+            </Grid>
+
+            <!-- Conditional Find match bar or Drag destination feedback pill -->
+            <Border Background="{DynamicResource Brush.AccentSurface}" BorderBrush="{DynamicResource Brush.AccentFill}"
+                    BorderThickness="1" CornerRadius="5" Padding="10,4" Margin="0,6,0,0"
+                    Visibility="{Binding BoardSearchMatchSummary, Converter={StaticResource IfAny}}">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                        <Button Style="{StaticResource LinkButton}" Content="Prev" Command="{Binding PreviousSearchMatchCommand}" Margin="0,0,6,0" />
+                        <Button Style="{StaticResource LinkButton}" Content="Next (F3)" Command="{Binding NextSearchMatchCommand}" Margin="0,0,6,0" />
+                        <Button Style="{StaticResource LinkButton}" Content="Clear" Command="{Binding ClearBoardSearchCommand}" />
+                    </StackPanel>
+                    <TextBlock Style="{StaticResource Text.Caption}" Foreground="{DynamicResource Brush.AccentText}"
+                               Text="{Binding BoardSearchMatchSummary}" VerticalAlignment="Center" />
+                </DockPanel>
+            </Border>
+
+            <Border Background="{DynamicResource Brush.AccentSurface}" BorderBrush="{DynamicResource Brush.AccentFill}"
+                    BorderThickness="1" CornerRadius="5" Padding="10,4" Margin="0,6,0,0"
+                    Visibility="{Binding DragStatusText, Converter={StaticResource IfAny}}">
+                <TextBlock Style="{StaticResource Text.Caption}" Foreground="{DynamicResource Brush.AccentText}"
+                           FontWeight="SemiBold" Text="{Binding DragStatusText}" />
+            </Border>
+        </StackPanel>
+
+        <!-- Main workspace: Tiers + Virtualized Docked Unranked Tray + Collapsible Inspector -->
+        <Grid x:Name="BoardWorkspaceGrid">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition x:Name="BoardInspectorColumn" Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Tiers (top *) + Splitter + Unranked Tray (bottom resizable/collapsible) -->
+            <Grid x:Name="BoardRowsGrid" Grid.Column="0" SizeChanged="OnBoardRowsGridSizeChanged">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" MinHeight="110" />
+                    <RowDefinition x:Name="TraySplitterRow" Height="Auto" />
+                    <RowDefinition x:Name="TrayRow" Height="220" />
+                </Grid.RowDefinitions>
+
+                <!-- Tier rows scroll area -->
+                <ScrollViewer x:Name="Rows" Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                              Focusable="False" AllowDrop="True" PreviewDragOver="OnRowsDragOver">
+                    <StackPanel Margin="0,0,4,6">
+                        <ItemsControl ItemsSource="{Binding Tiers}" ItemTemplate="{StaticResource RowTemplate}" Focusable="False" />
+                        <Button Style="{StaticResource SubtleButton}" Command="{Binding AppendNewTierCommand}" HorizontalAlignment="Stretch"
+                                AutomationProperties.Name="Add tier"
+                                BorderBrush="{DynamicResource Brush.BorderControl}" BorderThickness="1" Margin="0,2,0,4"
+                                ToolTip="Add a new tier below the current tiers">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Data="{StaticResource Icon.Plus}" Width="12" Height="12" Stretch="Uniform" Margin="0,0,6,0"
+                                      Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.8" VerticalAlignment="Center" />
+                                <TextBlock Text="Add tier" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <GridSplitter x:Name="TraySplitter" Grid.Row="1" Height="4" HorizontalAlignment="Stretch" ResizeDirection="Rows" Margin="0,1"
+                              IsEnabled="{Binding IsNotCompactViewport}"
+                              DragCompleted="OnTraySplitterDragCompleted"
+                              Visibility="{Binding TrayCollapsed, Converter={StaticResource Hidden}}" />
+
+                <!-- Docked Virtualized Unranked Tray -->
+                <Border Grid.Row="2" CornerRadius="6" BorderThickness="1.5" SnapsToDevicePixels="True"
+                        DataContext="{Binding Unranked}">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="Background" Value="{DynamicResource Brush.BgSurface}" />
+                            <Setter Property="BorderBrush" Value="{DynamicResource Brush.BorderSubtle}" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsDragTarget}" Value="True">
+                                    <Setter Property="Background" Value="{DynamicResource Brush.AccentSurface}" />
+                                    <Setter Property="BorderBrush" Value="{DynamicResource Brush.AccentFill}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <DockPanel>
+                        <!-- Unranked Tray Header -->
+                        <Border DockPanel.Dock="Top" Background="{DynamicResource Brush.PoolHeader}" CornerRadius="5,5,0,0" Padding="10,4">
+                            <DockPanel>
+                                <Button DockPanel.Dock="Right"
+                                        Command="{Binding DataContext.ToggleTrayCommand, ElementName=Root}"
+                                        ToolTip="Collapse or expand the unranked tray (Ctrl+U)">
+                                    <Button.Style>
+                                        <Style TargetType="Button" BasedOn="{StaticResource LinkButton}">
+                                            <Setter Property="Content" Value="Collapse (Ctrl+U)" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding DataContext.TrayCollapsed, ElementName=Root}" Value="True">
+                                                    <Setter Property="Content" Value="Expand (Ctrl+U)" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Border Background="{DynamicResource Brush.BgRaised}" BorderBrush="{DynamicResource Brush.BorderControl}"
+                                            BorderThickness="1" CornerRadius="3" Padding="4,1" Margin="0,0,8,0">
+                                        <TextBlock Style="{StaticResource Text.Keycap}" Text="0" />
+                                    </Border>
+                                    <TextBlock Style="{StaticResource Text.BodyStrong}" Text="{Binding Header}" VerticalAlignment="Center" />
+                                    <TextBlock Style="{StaticResource Text.Muted}" Margin="8,0,0,0" VerticalAlignment="Center"
+                                               Text="Collection seed order (cannot reorder manually)" />
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+
+                        <!-- Virtualized Unranked Poster Grid (fills resizable TrayRow height) -->
+                        <Grid x:Name="UnrankedBody" Visibility="{Binding DataContext.TrayCollapsed, ElementName=Root, Converter={StaticResource Hidden}}">
+                            <TextBlock Style="{StaticResource Text.Muted}" Text="{Binding EmptyHint}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       IsHitTestVisible="False" Visibility="{Binding IsEmpty, Converter={StaticResource Visible}}" />
+
+                            <ListBox x:Name="UnrankedList" ItemsSource="{Binding Entries}" SelectedItem="{Binding SelectedEntry}"
+                                     ItemTemplate="{StaticResource EntryTemplate}" SelectionMode="Single" AllowDrop="True"
+                                     Background="Transparent" BorderThickness="0" Padding="6,3"
+                                     AutomationProperties.Name="{Binding AccessibleName}"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                     ScrollViewer.CanContentScroll="True"
+                                     VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
+                                     PreviewMouseLeftButtonDown="OnEntryMouseDown" PreviewMouseMove="OnEntryMouseMove"
+                                     DragOver="OnRowDragOver" DragLeave="OnRowDragLeave" Drop="OnRowDrop">
+                                <ListBox.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <controls:VirtualizingTilePanel
+                                            TileWidth="{Binding DataContext.TileWidth, ElementName=Root}"
+                                            TileHeight="{Binding DataContext.TileHeight, ElementName=Root}"
+                                            HorizontalGap="6" VerticalGap="6" />
+                                    </ItemsPanelTemplate>
+                                </ListBox.ItemsPanel>
+                                <ListBox.ItemContainerStyle>
+                                    <Style TargetType="ListBoxItem">
+                                        <Setter Property="Padding" Value="0" />
+                                        <Setter Property="Margin" Value="0" />
+                                        <Setter Property="Background" Value="Transparent" />
+                                        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRingStyle}" />
+                                        <Setter Property="AutomationProperties.Name" Value="{Binding AccessibleName}" />
+                                        <Setter Property="AutomationProperties.ItemStatus" Value="{Binding ItemStatus}" />
+                                        <EventSetter Event="GotKeyboardFocus" Handler="OnEntryGotKeyboardFocus" />
+                                        <EventSetter Event="MouseDoubleClick" Handler="OnEntryDoubleClick" />
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="ListBoxItem">
+                                                    <Border x:Name="CardSel" CornerRadius="7" BorderThickness="2" BorderBrush="Transparent">
+                                                        <ContentPresenter />
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsSelected" Value="True">
+                                                            <Setter TargetName="CardSel" Property="BorderBrush" Value="{DynamicResource Brush.AccentFill}" />
+                                                            <Setter TargetName="CardSel" Property="Background" Value="{DynamicResource Brush.BgSelected}" />
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </ListBox.ItemContainerStyle>
+                                <ListBox.InputBindings>
+                                    <KeyBinding Key="D1" Command="{Binding DataContext.MoveToTierCommand, ElementName=Root}" CommandParameter="1" />
+                                    <KeyBinding Key="D2" Command="{Binding DataContext.MoveToTierCommand, ElementName=Root}" CommandParameter="2" />
+                                    <KeyBinding Key="D3" Command="{Binding DataContext.MoveToTierCommand, ElementName=Root}" CommandParameter="3" />
+                                    <KeyBinding Key="D4" Command="{Binding DataContext.MoveToTierCommand, ElementName=Root}" CommandParameter="4" />
+                                    <KeyBinding Key="D5" Command="{Binding DataContext.MoveToTierCommand, ElementName=Root}" CommandParameter="5" />
+                                    <KeyBinding Key="D6" Command="{Binding DataContext.MoveToTierCommand, ElementName=Root}" CommandParameter="6" />
+                                    <KeyBinding Key="D7" Command="{Binding DataContext.MoveToTierCommand, ElementName=Root}" CommandParameter="7" />
+                                    <KeyBinding Key="D8" Command="{Binding DataContext.MoveToTierCommand, ElementName=Root}" CommandParameter="8" />
+                                    <KeyBinding Key="D9" Command="{Binding DataContext.MoveToTierCommand, ElementName=Root}" CommandParameter="9" />
+                                    <KeyBinding Key="NumPad1" Command="{Binding DataContext.MoveToTierCommand, ElementName=Root}" CommandParameter="1" />
+                                    <KeyBinding Key="NumPad2" Command="{Binding DataContext.MoveToTierCommand, ElementName=Root}" CommandParameter="2" />
+                                    <KeyBinding Key="NumPad3" Command="{Binding DataContext.MoveToTierCommand, ElementName=Root}" CommandParameter="3" />
+                                    <KeyBinding Key="NumPad4" Command="{Binding DataContext.MoveToTierCommand, ElementName=Root}" CommandParameter="4" />
+                                    <KeyBinding Key="NumPad5" Command="{Binding DataContext.MoveToTierCommand, ElementName=Root}" CommandParameter="5" />
+                                    <KeyBinding Key="NumPad6" Command="{Binding DataContext.MoveToTierCommand, ElementName=Root}" CommandParameter="6" />
+                                    <KeyBinding Key="NumPad7" Command="{Binding DataContext.MoveToTierCommand, ElementName=Root}" CommandParameter="7" />
+                                    <KeyBinding Key="NumPad8" Command="{Binding DataContext.MoveToTierCommand, ElementName=Root}" CommandParameter="8" />
+                                    <KeyBinding Key="NumPad9" Command="{Binding DataContext.MoveToTierCommand, ElementName=Root}" CommandParameter="9" />
+                                    <KeyBinding Key="D0" Command="{Binding DataContext.MoveToUnrankedCommand, ElementName=Root}" />
+                                    <KeyBinding Key="NumPad0" Command="{Binding DataContext.MoveToUnrankedCommand, ElementName=Root}" />
+                                    <KeyBinding Key="Left" Modifiers="Control" Command="{Binding DataContext.MoveLeftCommand, ElementName=Root}" />
+                                    <KeyBinding Key="Right" Modifiers="Control" Command="{Binding DataContext.MoveRightCommand, ElementName=Root}" />
+                                    <KeyBinding Key="Up" Modifiers="Alt" Command="{Binding DataContext.MoveToTierAboveCommand, ElementName=Root}" />
+                                    <KeyBinding Key="Down" Modifiers="Alt" Command="{Binding DataContext.MoveToTierBelowCommand, ElementName=Root}" />
+                                    <KeyBinding Key="Return" Command="{Binding DataContext.OpenSelectedEntryDetailsCommand, ElementName=Root}" />
+                                </ListBox.InputBindings>
+                            </ListBox>
+                        </Grid>
+                    </DockPanel>
+                </Border>
+            </Grid>
+
+            <!-- Narrow-viewport overlay scrim -->
+            <Border x:Name="BoardInspectorScrim" Grid.Column="0" Background="{DynamicResource Brush.BgOverlay}" Visibility="Collapsed"
+                    MouseLeftButtonDown="OnBoardScrimClick" />
+
+            <!-- Collapsible Board Inspector: Tier Editor + Selected Show Move Controls -->
+            <Border x:Name="BoardInspectorHost" Grid.Column="1" Width="300" Margin="10,0,0,0"
+                    Background="{DynamicResource Brush.BgSurface}" BorderBrush="{DynamicResource Brush.BorderSubtle}"
+                    BorderThickness="1" CornerRadius="8"
+                    Visibility="{Binding InspectorOpen, Converter={StaticResource Visible}}">
+                <DockPanel>
+                    <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource Brush.BorderSubtle}" BorderThickness="0,0,0,1" Padding="10,8">
+                        <DockPanel>
+                            <Button DockPanel.Dock="Right" Style="{StaticResource IconButton}" Width="26" Height="26" MinHeight="26"
+                                    Command="{Binding CloseInspectorCommand}" AutomationProperties.Name="Close board inspector" ToolTip="Close inspector (Esc)">
+                                <Path Data="{StaticResource Icon.Close}" Width="11" Height="11" Stretch="Uniform"
+                                      Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.8" />
+                            </Button>
+                            <StackPanel Orientation="Horizontal">
+                                <RadioButton Style="{StaticResource SegmentedRadioStyle}" GroupName="BoardInspectorTab" Content="Show" Margin="0,0,4,0"
+                                             IsChecked="{Binding InspectorTabIndex, Converter={StaticResource EqBool}, ConverterParameter=0}" />
+                                <RadioButton Style="{StaticResource SegmentedRadioStyle}" GroupName="BoardInspectorTab" Content="Tier editor"
+                                             IsChecked="{Binding InspectorTabIndex, Converter={StaticResource EqBool}, ConverterParameter=1}" />
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+
+                    <!-- Tab 0: Selected Show -->
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <ScrollViewer.Style>
+                            <Style TargetType="ScrollViewer">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding InspectorTabIndex}" Value="0">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ScrollViewer.Style>
+                        <StackPanel Margin="12">
+                            <TextBlock Style="{StaticResource Text.Caption}" TextWrapping="Wrap"
+                                       Text="Select any show on the board to inspect its pinned cover or move it to any tier."
+                                       Visibility="{Binding HasSelectedEntry, Converter={StaticResource Hidden}}" />
+                            <StackPanel Visibility="{Binding HasSelectedEntry, Converter={StaticResource Visible}}">
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="74" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Border Width="66" Height="94" CornerRadius="4" Background="{DynamicResource Brush.BgPosterMat}"
+                                            BorderBrush="{DynamicResource Brush.BorderSubtle}" BorderThickness="1" ClipToBounds="True" HorizontalAlignment="Left">
+                                        <Grid>
+                                            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="4"
+                                                        Visibility="{Binding SelectedEntry.HasCover, Converter={StaticResource Hidden}}">
+                                                <Path Width="16" Height="16" Stretch="Uniform" HorizontalAlignment="Center">
+                                                    <Path.Style>
+                                                        <Style TargetType="Path">
+                                                            <Setter Property="Data" Value="{StaticResource Icon.ImageOff}" />
+                                                            <Setter Property="Stroke" Value="{DynamicResource Brush.TextMuted}" />
+                                                            <Setter Property="StrokeThickness" Value="1.5" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding SelectedEntry.IsBrokenCover}" Value="True">
+                                                                    <Setter Property="Data" Value="{StaticResource Icon.Warning}" />
+                                                                    <Setter Property="Stroke" Value="{DynamicResource Brush.DangerText}" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Path.Style>
+                                                </Path>
+                                                <TextBlock Style="{StaticResource Text.Caption}" FontSize="10" Text="{Binding SelectedEntry.CoverPlaceholder}"
+                                                           TextAlignment="Center" TextWrapping="Wrap" Margin="0,4,0,0" />
+                                            </StackPanel>
+                                            <Image Source="{Binding SelectedEntry.Thumbnail}" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality" />
+                                            <controls:CopyNumberOverlay CopyNumber="{Binding SelectedEntry.CopyNumber}"
+                                                                        Visibility="{Binding SelectedEntry.IsDuplicate, Converter={StaticResource Visible}}" />
+                                        </Grid>
+                                    </Border>
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock Style="{StaticResource Text.BodyStrong}" Text="{Binding SelectedEntry.Title}" TextWrapping="Wrap" />
+                                        <TextBlock Style="{StaticResource Text.Caption}" Text="{Binding SelectedEntry.PlacementLabel}" Margin="0,4,0,0" />
+                                        <TextBlock Style="{StaticResource Text.Muted}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0"
+                                                   Text="Pinned at board creation or update. Collection edits never rewrite this board." />
+                                    </StackPanel>
+                                </Grid>
+
+                                <Button Content="Details &amp; duplicate..." Command="{Binding OpenSelectedEntryDetailsCommand}" Margin="0,0,0,10"
+                                        ToolTip="View LiveChart details and add numbered duplicate copies (Enter or double-click card)" />
+
+                                <TextBlock Style="{StaticResource Text.Section}" Text="REORDER WITHIN TIER" Margin="0,4,0,6" />
+                                <UniformGrid Columns="2" Margin="0,0,0,8">
+                                    <Button Content="Earlier (Ctrl+←)" Command="{Binding MoveLeftCommand}" Margin="0,0,4,0" />
+                                    <Button Content="Later (Ctrl+→)" Command="{Binding MoveRightCommand}" Margin="4,0,0,0" />
+                                </UniformGrid>
+
+                                <TextBlock Style="{StaticResource Text.Section}" Text="MOVE TO TIER" Margin="0,4,0,6" />
+                                <ItemsControl ItemsSource="{Binding Tiers}" Focusable="False">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type vm:TierViewModel}">
+                                            <Button Command="{Binding DataContext.MoveSelectedToTierCommand, ElementName=Root}" CommandParameter="{Binding}"
+                                                    HorizontalContentAlignment="Left" Margin="0,0,0,4" Padding="8,5">
+                                                <DockPanel>
+                                                    <Border Width="14" Height="14" CornerRadius="3" Background="{Binding Background}" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                                    <TextBlock DockPanel.Dock="Right" FontFamily="{StaticResource Font.Mono}" FontSize="11" FontWeight="SemiBold"
+                                                               Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                                               Text="{Binding ShortcutText}"
+                                                               Visibility="{Binding HasShortcut, Converter={StaticResource Visible}}" VerticalAlignment="Center" />
+                                                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+                                                </DockPanel>
+                                            </Button>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <Button Content="Return to Unranked (0)" Command="{Binding MoveToUnrankedCommand}" Margin="0,4,0,0" />
+                            </StackPanel>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- Tab 1: Tier Editor (TierNameBox stays directly named in BoardView for keyboard/test parity) -->
+                    <ScrollViewer x:Name="BoardInspectorScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <ScrollViewer.Style>
+                            <Style TargetType="ScrollViewer">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding InspectorTabIndex}" Value="1">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ScrollViewer.Style>
+                        <StackPanel Margin="12">
+                            <Label Content="Selected t_ier" Target="{Binding ElementName=TierBox}" Margin="0,0,0,4" />
+                            <ComboBox x:Name="TierBox" ItemsSource="{Binding Tiers}" DisplayMemberPath="Name"
+                                      AutomationProperties.Name="Selected tier" SelectedItem="{Binding SelectedTier}" Margin="0,0,0,10" />
+
+                            <Label Content="Tier na_me" Target="{Binding ElementName=TierNameBox}" Margin="0,0,0,4" />
+                            <TextBox x:Name="TierNameBox" Text="{Binding TierNameText, UpdateSourceTrigger=PropertyChanged}"
+                                     IsEnabled="{Binding Project.EditsEnabled}"
+                                     AutomationProperties.Name="Tier name" KeyDown="OnTierNameKeyDown" Margin="0,0,0,8" />
+                            <Button Style="{StaticResource PrimaryButton}" Content="Apply to tier" Command="{Binding EditTierCommand}" Margin="0,0,0,12" />
+
+                            <TextBlock Style="{StaticResource Text.Section}" Text="TIER COLOR" Margin="0,0,0,6" />
+                            <ItemsControl ItemsSource="{Binding ColorOptions}" Focusable="False" Margin="0,0,0,10"
+                                          KeyboardNavigation.TabNavigation="Once" KeyboardNavigation.DirectionalNavigation="Cycle">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="{x:Type vm:TierColorOption}">
+                                        <RadioButton GroupName="TierColorSwatches"
+                                                     Command="{Binding DataContext.SelectTierColorCommand, ElementName=Root}" CommandParameter="{Binding}"
+                                                     Width="32" Height="32" MinHeight="32" Padding="0" Margin="0,0,5,5"
+                                                     ToolTip="{Binding Label}" ToolTipService.ShowOnDisabled="True"
+                                                     AutomationProperties.Name="{Binding Label}"
+                                                     Background="{Binding Value, Converter={StaticResource TierColorBrush}}">
+                                            <RadioButton.IsChecked>
+                                                <MultiBinding Converter="{StaticResource SameObject}" Mode="OneWay">
+                                                    <Binding />
+                                                    <Binding Path="DataContext.TierColor" ElementName="Root" />
+                                                </MultiBinding>
+                                            </RadioButton.IsChecked>
+                                            <RadioButton.Template>
+                                                <ControlTemplate TargetType="RadioButton">
+                                                    <Border x:Name="SwatchBorder" Background="{TemplateBinding Background}" BorderBrush="{DynamicResource Brush.BorderControl}"
+                                                            BorderThickness="1.5" CornerRadius="6" Cursor="Hand" ClipToBounds="True">
+                                                        <Grid>
+                                                            <Border x:Name="DisabledVeil" Background="{DynamicResource Brush.DisabledBg}" Opacity="0.72"
+                                                                    CornerRadius="4" Visibility="Collapsed" IsHitTestVisible="False" />
+                                                            <Line x:Name="DisabledSlash" X1="4" Y1="26" X2="26" Y2="4"
+                                                                  Stroke="{DynamicResource Brush.DisabledBorder}" StrokeThickness="1.5"
+                                                                  Visibility="Collapsed" IsHitTestVisible="False" />
+                                                            <Path x:Name="SelectedTick" Data="M3,8.5 L6.5,12 L13,4.5" Width="13" Height="13" Stretch="Uniform"
+                                                                  Stroke="{Binding Value, Converter={StaticResource TierInkBrush}}" StrokeThickness="2.2"
+                                                                  HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" />
+                                                        </Grid>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="SwatchBorder" Property="BorderBrush" Value="{DynamicResource Brush.TextPrimary}" />
+                                                            <Setter TargetName="SwatchBorder" Property="BorderThickness" Value="2" />
+                                                        </Trigger>
+                                                        <Trigger Property="IsChecked" Value="True">
+                                                            <Setter TargetName="SwatchBorder" Property="BorderBrush" Value="{DynamicResource Brush.FocusRing}" />
+                                                            <Setter TargetName="SwatchBorder" Property="BorderThickness" Value="2.5" />
+                                                            <Setter TargetName="SelectedTick" Property="Visibility" Value="Visible" />
+                                                        </Trigger>
+                                                        <Trigger Property="IsEnabled" Value="False">
+                                                            <Setter TargetName="SwatchBorder" Property="BorderBrush" Value="{DynamicResource Brush.DisabledBorder}" />
+                                                            <Setter TargetName="SwatchBorder" Property="Cursor" Value="Arrow" />
+                                                            <Setter TargetName="DisabledVeil" Property="Visibility" Value="Visible" />
+                                                            <Setter TargetName="DisabledSlash" Property="Visibility" Value="Visible" />
+                                                            <Setter TargetName="SelectedTick" Property="Stroke" Value="{DynamicResource Brush.DisabledText}" />
+                                                        </Trigger>
+                                                        <MultiTrigger>
+                                                            <MultiTrigger.Conditions>
+                                                                <Condition Property="IsChecked" Value="True" />
+                                                                <Condition Property="IsEnabled" Value="False" />
+                                                            </MultiTrigger.Conditions>
+                                                            <Setter TargetName="SwatchBorder" Property="BorderBrush" Value="{DynamicResource Brush.TextSecondary}" />
+                                                            <Setter TargetName="SwatchBorder" Property="BorderThickness" Value="2" />
+                                                            <Setter TargetName="SelectedTick" Property="Stroke" Value="{DynamicResource Brush.TextPrimary}" />
+                                                            <Setter TargetName="SelectedTick" Property="Opacity" Value="0.85" />
+                                                        </MultiTrigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </RadioButton.Template>
+                                        </RadioButton>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <Separator Margin="0,2,0,10" />
+                            <TextBlock Style="{StaticResource Text.Section}" Text="TIER ORDER &amp; ACTIONS" Margin="0,0,0,6" />
+                            <UniformGrid Columns="2" Margin="0,0,0,6">
+                                <Button Content="Tier up" Command="{Binding MoveTierUpCommand}" Margin="0,0,4,0" />
+                                <Button Content="Tier down" Command="{Binding MoveTierDownCommand}" Margin="4,0,0,0" />
+                            </UniformGrid>
+                            <Button Content="Add tier below" Command="{Binding AddTierBelowCommand}" CommandParameter="{Binding SelectedTier}" Margin="0,0,0,6" />
+                            <Button Style="{StaticResource DangerButton}" Content="Delete tier..." Command="{Binding DeleteTierCommand}" />
+                        </StackPanel>
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
+        </Grid>
+    </DockPanel>
+</UserControl>

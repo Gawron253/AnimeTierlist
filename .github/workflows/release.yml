@@ -1,0 +1,83 @@
+# Builds the standalone portable Windows ZIP and SHA-256 checksum.
+# Tag pushes (v*) create a GitHub Release with both files attached.
+# Manual runs upload both files as workflow artifacts without publishing a release.
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: '1'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+
+jobs:
+  release:
+    name: Package standalone release (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+          skip-lts-prepass: true
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+
+      - name: Read version and verify tag
+        id: meta
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = (Select-Xml -Path 'src/AnimeTierlist.Desktop/AnimeTierlist.Desktop.csproj' -XPath '//Version').Node.InnerText
+          if (-not $version) { throw 'Desktop project has no <Version>.' }
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") {
+            throw "Tag '$env:GITHUB_REF_NAME' does not match Desktop <Version> 'v$version'."
+          }
+          $name = "AnimeTierlist-$version-win-x64"
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "zip=out/$name.zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "sha256=out/$name.zip.sha256" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Build standalone package
+        shell: pwsh
+        run: ./tools/release/Build-Release.ps1
+
+      - name: Publish GitHub Release
+        if: github.event_name == 'push' && github.ref_type == 'tag'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          ZIP_PATH: ${{ steps.meta.outputs.zip }}
+          SHA_PATH: ${{ steps.meta.outputs.sha256 }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          gh release create $env:TAG $env:ZIP_PATH $env:SHA_PATH --title "AnimeTierlist $env:VERSION" --generate-notes --verify-tag
+
+      - name: Upload release artifacts (manual run)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: AnimeTierlist-${{ steps.meta.outputs.version }}-win-x64
+          path: |
+            ${{ steps.meta.outputs.zip }}
+            ${{ steps.meta.outputs.sha256 }}
+          if-no-files-found: error
+          retention-days: 14

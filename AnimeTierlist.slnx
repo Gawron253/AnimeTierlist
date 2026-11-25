@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/AnimeTierlist.Application/AnimeTierlist.Application.csproj" />
+    <Project Path="src/AnimeTierlist.Core/AnimeTierlist.Core.csproj" />
+    <Project Path="src/AnimeTierlist.Desktop/AnimeTierlist.Desktop.csproj" />
+    <Project Path="src/AnimeTierlist.Infrastructure/AnimeTierlist.Infrastructure.csproj" />
+  </Folder>
+</Solution>

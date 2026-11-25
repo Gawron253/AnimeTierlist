@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>AnimeTierlist.Application</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\AnimeTierlist.Core\AnimeTierlist.Core.csproj" />
+  </ItemGroup>
+</Project>

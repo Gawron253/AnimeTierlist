@@ -1,0 +1,25 @@
+# .NET build output
+bin/
+obj/
+*.user
+.vs/
+.nuget/
+TestResults/
+out/
+
+# Portable data root and user projects
+data/
+*.animerank
+project.sqlite*
+project.lock
+
+# Local development docs, tests, and helper tools
+AGENTS.md
+tests/
+docs/*_PLAN.md
+docs/*_SPEC.md
+docs/*_MATRIX.md
+docs/*_AUDIT.md
+tools/sandbox/
+tools/fixtures/
+tools/icon/
