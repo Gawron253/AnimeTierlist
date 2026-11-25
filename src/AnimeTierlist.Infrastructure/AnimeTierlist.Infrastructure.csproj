@@ -10,4 +10,7 @@
     <PackageReference Include="Microsoft.Data.Sqlite" />
     <PackageReference Include="SkiaSharp" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="AnimeTierlist.Infrastructure.Tests" />
+  </ItemGroup>
 </Project>

@@ -3,4 +3,7 @@
   <PropertyGroup>
     <RootNamespace>AnimeTierlist.Core</RootNamespace>
   </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="AnimeTierlist.Core.Tests" />
+  </ItemGroup>
 </Project>

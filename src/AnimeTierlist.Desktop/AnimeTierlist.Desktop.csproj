@@ -25,6 +25,9 @@
     <!-- Packaged page for the in-app YouTube player, served from a WebView2 virtual host. -->
     <Content Include="Assets\Player\player.html;Assets\Player\player.js;Assets\Player\player.css" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="AnimeTierlist.Desktop.Tests" />
+  </ItemGroup>
   <!-- Native package debug symbols (libSkiaSharp.pdb is ~100 MB) are not shipped in the portable release. -->
   <Target Name="ExcludeNativePackageSymbols" AfterTargets="ComputeResolvedFilesToPublishList">
     <ItemGroup>

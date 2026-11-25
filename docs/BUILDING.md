@@ -21,6 +21,21 @@ dotnet list AnimeTierlist.slnx package --vulnerable --include-transitive
 
 If Windows Firewall prompts about `dotnet.exe` the first time it contacts `nuget.org`, allow it so restore can finish.
 
+## Run the tests
+
+```powershell
+dotnet test --solution AnimeTierlist.slnx
+```
+
+The suite covers the core model, storage, LiveChart parsing, HTTP policy, exports, archives, and desktop workflows. It makes no network requests: LiveChart pages come from synthetic fixtures in [tests/fixtures/livechart](../tests/fixtures/livechart/README.md) and covers are generated in memory. Desktop tests render WPF views off-screen, so they need a Windows session.
+
+Opt-in checks are skipped unless their environment variable is set:
+
+| Variable | Check |
+| --- | --- |
+| `ANIMETIERLIST_LIVE_CHECK=1` | Fetches a small season and its covers from the real LiveChart site, following the app's request pacing. Use it to detect site layout changes. |
+| `ANIMETIERLIST_LIVE_PLAYER_CHECK=<links>` | Opens the given YouTube links in the in-app player. |
+
 ## Run from source
 
 ```powershell
@@ -43,5 +58,5 @@ Running `AnimeTierlist.exe` creates `data\` next to the executable. If that dire
 
 ## Continuous integration and releases
 
-- [.github/workflows/ci.yml](../.github/workflows/ci.yml) runs on every pull request to `main` and every push to `main` on `windows-latest`. It restores with `--locked-mode`, builds `AnimeTierlist.slnx`, and runs `tools/release/Build-Release.ps1` to verify the standalone package builds cleanly.
-- [.github/workflows/release.yml](../.github/workflows/release.yml) runs on `v*` tag pushes and manual workflow dispatches. On a tag push (such as `v1.0.0`, or `v1.0.0-beta.1` for a prerelease), it checks that the tag matches `<Version>` in `src/AnimeTierlist.Desktop/AnimeTierlist.Desktop.csproj`, builds the standalone ZIP and `.sha256` file, and creates a GitHub Release with both files attached. Versions with a prerelease suffix (`-beta.1`, `-rc.1`) are published as GitHub prereleases. Manual runs build the ZIP and `.sha256` file and upload them as workflow artifacts.
+- [.github/workflows/ci.yml](../.github/workflows/ci.yml) runs on every pull request to `main` and every push to `main` on `windows-latest`. It restores with `--locked-mode`, builds `AnimeTierlist.slnx`, runs the test suite, and runs `tools/release/Build-Release.ps1` to verify the standalone package builds cleanly.
+- [.github/workflows/release.yml](../.github/workflows/release.yml) runs on `v*` tag pushes and manual workflow dispatches. On a tag push (such as `v1.0.0`, or `v1.0.0-beta.1` for a prerelease), it checks that the tag matches `<Version>` in `src/AnimeTierlist.Desktop/AnimeTierlist.Desktop.csproj`, runs the test suite, builds the standalone ZIP and `.sha256` file, and creates a GitHub Release with both files attached. Versions with a prerelease suffix (`-beta.1`, `-rc.1`) are published as GitHub prereleases. Manual runs build the ZIP and `.sha256` file and upload them as workflow artifacts.

@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Test-only helper process for process-kill tests. The infrastructure tests start it, terminate it at
+    chosen points, and verify what is left on disk. It is not part of the product and is never packaged.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>false</IsTestProject>
+    <RootNamespace>AnimeTierlist.CrashWorker</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\AnimeTierlist.Infrastructure\AnimeTierlist.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>
