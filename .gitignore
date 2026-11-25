@@ -14,7 +14,6 @@ project.sqlite*
 project.lock
 
 # Local development docs and helper tools
-AGENTS.md
 docs/*_PLAN.md
 docs/*_SPEC.md
 docs/*_MATRIX.md
