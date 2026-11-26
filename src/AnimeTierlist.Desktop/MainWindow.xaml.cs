@@ -29,6 +29,7 @@ public partial class MainWindow : Window
     {
         Services.ThemeManager.EnsureViewResources(this);
         InitializeComponent();
+        Overlays.Workspace = WorkspaceRoot;
         DataContextChanged += OnDataContextChanged;
         Loaded += OnWindowLoaded;
     }
@@ -121,9 +122,8 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// While a layer is open, Esc closes it, and no key reaches the content behind it: keys aimed outside the layer
-    /// (for example a board card that kept focus) move focus into the layer instead, and the window's own shortcuts
-    /// (undo, redo, sidebar, help) do nothing.
+    /// While a layer is open, Esc closes it, and the window's own shortcuts (undo, redo, sidebar, help) do nothing,
+    /// so they cannot change the board behind the layer.
     /// </summary>
     private bool HandleOverlayKey(KeyEventArgs e)
     {
@@ -132,25 +132,7 @@ public partial class MainWindow : Window
             return Overlays.HandleEscape();
         }
 
-        if (!IsInsideOverlay(e.OriginalSource as DependencyObject))
-        {
-            Overlays.FocusTop();
-            // Alt+F4 still closes the window.
-            return !(e.Key == Key.System && e.SystemKey == Key.F4);
-        }
-
         return InputBindings.OfType<InputBinding>().Any(binding => binding.Gesture?.Matches(this, e) == true);
-    }
-
-    private bool IsInsideOverlay(DependencyObject? element)
-    {
-        while (element is not null && !ReferenceEquals(element, Overlays))
-        {
-            element = (element is Visual or System.Windows.Media.Media3D.Visual3D ? VisualTreeHelper.GetParent(element) : null)
-                ?? LogicalTreeHelper.GetParent(element);
-        }
-
-        return element is not null;
     }
 
     /// <summary>Executes collection-wide Include All (Alt+I) or Exclude All (Alt+X) when exact Alt is pressed.</summary>

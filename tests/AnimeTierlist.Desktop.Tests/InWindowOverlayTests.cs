@@ -17,20 +17,20 @@ namespace AnimeTierlist.Desktop.Tests;
 public sealed class InWindowOverlayTests
 {
     [Fact]
-    public Task Layers_stack_inside_the_main_window_and_close_from_the_top() => Ui.RunAsync(async () =>
+    public Task Layers_stack_inside_the_main_window_and_disable_the_workspace_until_the_last_closes() => Ui.RunAsync(async () =>
     {
         var window = new MainWindow();
         var overlays = window.Overlays;
         Assert.False(overlays.IsOpen);
         Assert.Equal(Visibility.Collapsed, overlays.Visibility);
+        Assert.True(window.WorkspaceRoot.IsEnabled);
 
         var details = new FakeOverlayView();
         overlays.Show(details);
         Assert.True(overlays.IsOpen);
         Assert.Equal(Visibility.Visible, overlays.Visibility);
+        Assert.False(window.WorkspaceRoot.IsEnabled);
         Assert.Same(window, Window.GetWindow(details));
-        // The content behind stays enabled, so it keeps its normal look under the scrim instead of turning grey.
-        Assert.True(window.WorkspaceRoot.IsEnabled);
 
         // The player opens above the details, which stay in the window, hidden, with their state.
         var player = new FakeOverlayView();
@@ -47,12 +47,14 @@ public sealed class InWindowOverlayTests
         Assert.Null(VisualTreeHelper.GetParent(player));
         Assert.Same(details, overlays.Top);
         Assert.Equal(Visibility.Visible, CardOf(details).Visibility);
+        Assert.False(window.WorkspaceRoot.IsEnabled);
 
-        // The view's own Close button (or view-model request) closes the last layer.
+        // The view's own Close button (or view-model request) closes the last layer and re-enables the workspace.
         details.RequestClose();
         Assert.Equal(1, details.ClosedCount);
         Assert.False(overlays.IsOpen);
         Assert.Equal(Visibility.Collapsed, overlays.Visibility);
+        Assert.True(window.WorkspaceRoot.IsEnabled);
 
         // A late request from a closed view, and Esc with nothing open, change nothing.
         details.RequestClose();
@@ -102,6 +104,7 @@ public sealed class InWindowOverlayTests
         Assert.Equal(1, third.ClosedCount);
         Assert.Equal(1, fourth.ClosedCount);
         Assert.False(overlays.IsOpen);
+        Assert.True(window.WorkspaceRoot.IsEnabled);
         Assert.Single(overlays.Children);
         return Task.CompletedTask;
     });
@@ -135,27 +138,23 @@ public sealed class InWindowOverlayTests
     });
 
     [Fact]
-    public Task Keys_never_reach_the_content_behind_an_open_layer_and_escape_closes_it() => Ui.RunAsync(async () =>
+    public Task Window_shortcuts_are_swallowed_while_a_layer_is_open_and_escape_closes_it() => Ui.RunAsync(async () =>
     {
         var window = new MainWindow();
         var source = new DummyPresentationSource(window);
-        var behind = window.WorkspaceRoot;
 
-        // No layer: keys reach the content and the window's bindings as usual.
+        // No layer: F1 reaches the window's key binding as usual.
         Assert.False(PressPreview(window, source, Key.F1));
-        Assert.False(PressPreview(behind, source, Key.D1));
 
         var layer = new FakeOverlayView();
         window.Overlays.Show(layer);
 
-        // A key aimed at the content behind (such as a tier hotkey on a board card that kept focus) is swallowed.
-        Assert.True(PressPreview(behind, source, Key.D1));
-        Assert.True(PressPreview(window, source, Key.Tab));
-
-        // Inside the layer, the window's own bindings (F1 shortcuts help) are swallowed and other keys pass through.
-        Assert.True(PressPreview(layer.Button, source, Key.F1));
-        Assert.False(PressPreview(layer.Button, source, Key.Tab));
+        // F1 (shortcuts help) is a window binding; it must not open behind the layer.
+        Assert.True(PressPreview(window, source, Key.F1));
         Assert.True(window.Overlays.IsOpen);
+
+        // Keys the window does not bind pass through to the layer.
+        Assert.False(PressPreview(window, source, Key.Tab));
 
         // Esc closes after the key event returns: WebView2 forwards it from a callback where the browser must not be disposed.
         Assert.True(PressPreview(window, source, Key.Escape));
@@ -184,6 +183,7 @@ public sealed class InWindowOverlayTests
             board.OpenEntryDetailsCommand.Execute(board.Unranked.Entries[0]);
             var detailsView = Assert.IsType<BoardEntryDetailsView>(window.Overlays.Top);
             Assert.Same(window, Window.GetWindow(detailsView));
+            Assert.False(window.WorkspaceRoot.IsEnabled);
             var details = Assert.IsType<BoardEntryDetailsViewModel>(detailsView.DataContext);
 
             // Playing a YouTube link opens the player above the details, in the same window.
@@ -199,6 +199,7 @@ public sealed class InWindowOverlayTests
             Assert.Equal(Visibility.Visible, CardOf(detailsView).Visibility);
             window.Overlays.Close(detailsView);
             Assert.False(window.Overlays.IsOpen);
+            Assert.True(window.WorkspaceRoot.IsEnabled);
 
             // Removing a duplicate from its details closes the layer, as the view model requests.
             var duplicate = Assert.IsType<BoardEntry>(board.DuplicateEntry(board.Unranked.Entries[0].Item));
@@ -231,9 +232,7 @@ public sealed class InWindowOverlayTests
     {
         private bool _fullWindow;
 
-        public FakeOverlayView() => Content = Button;
-
-        public Button Button { get; } = new() { Content = "Close" };
+        public FakeOverlayView() => Content = new Button { Content = "Close" };
 
         public event EventHandler? CloseRequested;
 
