@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Threading;
 using AnimeTierlist.Core;
 using AnimeTierlist.Desktop.Services;
@@ -11,22 +12,24 @@ namespace AnimeTierlist.Desktop.Views;
 /// <summary>
 /// Sandboxed in-app YouTube player. This code-behind owns the WebView2 mechanics only: it locks the browser
 /// down, allows nothing but the packaged player page at the top level, and reports what happens to
-/// <see cref="VideoPlayerViewModel"/>. Closing the window disposes the browser, which ends its processes.
+/// <see cref="VideoPlayerViewModel"/>. It is shown as a layer inside the main window, so the browser is a child
+/// window of the main window and window capture includes it. Closing the layer disposes the browser, which ends
+/// its processes.
 /// </summary>
-public partial class VideoPlayerWindow : Window
+public partial class VideoPlayerView : UserControl, IOverlayView
 {
     private readonly VideoPlayerViewModel _player;
     private readonly VideoPlayerEnvironment? _environment;
     private readonly DispatcherTimer _readyTimer;
     private CoreWebView2? _core;
+    private bool _started;
     private bool _closed;
     private bool _browserDisposed;
+    private bool _fullWindow;
     private ulong? _playerNavigationId;
-    private WindowState _restoreState;
-    private WindowStyle _restoreStyle;
     private Thickness _restoreMargin;
 
-    public VideoPlayerWindow(VideoPlayerViewModel player, VideoPlayerEnvironment? environment)
+    public VideoPlayerView(VideoPlayerViewModel player, VideoPlayerEnvironment? environment)
     {
         ArgumentNullException.ThrowIfNull(player);
         _player = player;
@@ -39,12 +42,27 @@ public partial class VideoPlayerWindow : Window
         _readyTimer.Tick += OnReadyTimeout;
         _player.PropertyChanged += OnPlayerChanged;
         Loaded += OnLoaded;
-        Closed += OnClosed;
     }
+
+    public event EventHandler? CloseRequested;
+
+    public event EventHandler? FullWindowChanged;
+
+    public bool IsFullWindow => _fullWindow;
+
+    public Size MaxCardSize => new(1040, 720);
+
+    public bool FillsHeight => true;
 
     // Event handlers must be async void; every exception is caught and reported to the view model.
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
+        if (_started || _closed)
+        {
+            return;
+        }
+
+        _started = true;
         try
         {
             await StartAsync();
@@ -212,38 +230,32 @@ public partial class VideoPlayerWindow : Window
         }
     }
 
-    /// <summary>YouTube's full-screen button fills this window's screen instead of the small player area.</summary>
+    /// <summary>YouTube's full-screen button fills the main window with the video instead of the small player area.</summary>
     private void OnFullScreenChanged(object? sender, object e) => SetFullScreen(_core?.ContainsFullScreenElement == true);
 
     private void SetFullScreen(bool fullScreen)
     {
-        var isFullScreen = HeaderPanel.Visibility != Visibility.Visible;
-        if (fullScreen == isFullScreen)
+        if (fullScreen == _fullWindow)
         {
             return;
         }
 
+        _fullWindow = fullScreen;
         if (fullScreen)
         {
-            _restoreState = WindowState;
-            _restoreStyle = WindowStyle;
             _restoreMargin = RootPanel.Margin;
             HeaderPanel.Visibility = Visibility.Collapsed;
             FooterPanel.Visibility = Visibility.Collapsed;
             RootPanel.Margin = default;
-            WindowStyle = WindowStyle.None;
-            WindowState = WindowState.Normal;
-            WindowState = WindowState.Maximized;
         }
         else
         {
             HeaderPanel.Visibility = Visibility.Visible;
             FooterPanel.Visibility = Visibility.Visible;
             RootPanel.Margin = _restoreMargin;
-            WindowState = WindowState.Normal;
-            WindowStyle = _restoreStyle;
-            WindowState = _restoreState;
         }
+
+        FullWindowChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void DisposeBrowser()
@@ -277,8 +289,16 @@ public partial class VideoPlayerWindow : Window
         PlayerView.Dispose();
     }
 
-    private void OnClosed(object? sender, EventArgs e)
+    private void OnCloseClick(object sender, RoutedEventArgs e) => CloseRequested?.Invoke(this, EventArgs.Empty);
+
+    /// <summary>Stops playback and releases the browser before the layer leaves the window.</summary>
+    public void OnOverlayClosed()
     {
+        if (_closed)
+        {
+            return;
+        }
+
         _closed = true;
         _readyTimer.Stop();
         _readyTimer.Tick -= OnReadyTimeout;

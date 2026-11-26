@@ -7,8 +7,12 @@ using AnimeTierlist.Desktop.ViewModels;
 
 namespace AnimeTierlist.Desktop.Views;
 
-/// <summary>WPF modal dialog service applying active theme, native dark title bars, and owner bounds clamping.</summary>
-public sealed class WpfDialogService(Window owner, ThemeManager? themes = null, VideoPlayerEnvironment? videoPlayer = null) : IDialogService
+/// <summary>
+/// WPF modal dialog service. Anime details and the video player open as layers inside the main window, so sharing
+/// that window (for example in Discord) shows them. Other dialogs are owned windows with the active theme, native
+/// dark title bars, and owner bounds clamping.
+/// </summary>
+public sealed class WpfDialogService(Window owner, OverlayHost overlays, ThemeManager? themes = null, VideoPlayerEnvironment? videoPlayer = null) : IDialogService
 {
     public bool ShowRefreshReview(RefreshReviewViewModel review) =>
         Prepare(new RefreshReviewWindow { DataContext = review }).ShowDialog() == true;
@@ -20,18 +24,10 @@ public sealed class WpfDialogService(Window owner, ThemeManager? themes = null, 
         Prepare(new PngExportDialog { DataContext = preview }).ShowDialog() == true;
 
     public void ShowBoardEntryDetails(BoardEntryDetailsViewModel details) =>
-        Prepare(new BoardEntryDetailsWindow { DataContext = details }).ShowDialog();
+        overlays.Show(new BoardEntryDetailsView { DataContext = details });
 
-    public void ShowVideoPlayer(VideoPlayerViewModel player)
-    {
-        var window = Prepare(new VideoPlayerWindow(player, videoPlayer));
-        // Keep the clamped starting size, but let the player maximize and go full screen.
-        window.MaxWidth = double.PositiveInfinity;
-        window.MaxHeight = double.PositiveInfinity;
-        // The player opens from the board details dialog, so that dialog (not the main window) owns it.
-        window.Owner = System.Windows.Application.Current?.Windows.OfType<Window>().FirstOrDefault(w => w.IsActive && w != window) ?? owner;
-        window.ShowDialog();
-    }
+    public void ShowVideoPlayer(VideoPlayerViewModel player) =>
+        overlays.Show(new VideoPlayerView(player, videoPlayer));
 
     public void OpenExternalUrl(Uri url)
     {

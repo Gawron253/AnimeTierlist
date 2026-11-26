@@ -1924,7 +1924,7 @@ public sealed class UiDesignAndFunctionalityTests
         Assert.True(harness.Project.MoveBoard(draggedBoard, insertAt));
         Assert.Equal(draggedBoard.Id, harness.Project.Boards[insertAt].Id);
 
-        // 6. Verify CopyNumberOverlay renders on duplicated board cards and BoardEntryDetailsWindow builds cleanly in Dark & Light themes.
+        // 6. Verify CopyNumberOverlay renders on duplicated board cards and BoardEntryDetailsView builds cleanly in Dark & Light themes.
         harness.Project.SelectedBoard = harness.Project.Boards[0];
         var boardVm = Assert.IsType<BoardViewModel>(harness.Project.Content);
         var originalCard = boardVm.Unranked.Entries[0];
@@ -1952,12 +1952,10 @@ public sealed class UiDesignAndFunctionalityTests
         Assert.NotNull(harness.Dialogs.LastEntryDetails);
         Assert.Equal(originalCard.Key, harness.Dialogs.LastEntryDetails!.Key);
 
-        // Verify BoardEntryDetailsWindow instantiates and measures cleanly without binding errors.
+        // Verify BoardEntryDetailsView instantiates and measures cleanly without binding errors.
         var detailsVm = new BoardEntryDetailsViewModel(boardVm, boardVm.Unranked.Entries[1], harness.Session.Current);
-        var detailsWin = new BoardEntryDetailsWindow { DataContext = detailsVm };
-        var detailsContent = Assert.IsAssignableFrom<UIElement>(detailsWin.Content);
-        detailsWin.Content = null;
-        var detailsHost = new Border { Width = 620, Height = 560, DataContext = detailsVm, Child = detailsContent };
+        var detailsView = new BoardEntryDetailsView { DataContext = detailsVm };
+        var detailsHost = new Border { Width = 620, Height = 560, Child = detailsView };
         ThemeManager.ApplyToDictionary(detailsHost.Resources, AppTheme.Dark);
         detailsHost.Measure(new Size(620, 560));
         detailsHost.Arrange(new Rect(0, 0, 620, 560));
