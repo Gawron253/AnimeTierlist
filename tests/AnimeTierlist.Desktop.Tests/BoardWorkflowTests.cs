@@ -797,6 +797,107 @@ public sealed class BoardWorkflowTests
         Assert.Equal(["OP"], harness.Session.Current.ItemExtras[entry.Item].Videos.Select(v => v.Title));
     });
 
+    [Fact]
+    public Task Board_entry_details_shows_and_saves_videos_before_the_profile_page_returns() => Ui.RunAsync(async () =>
+    {
+        await using var harness = await DesktopHarness.CreateAsync(serveCovers: false);
+        var collection = await harness.CreateCollectionAsync();
+        var board = await CreateBoardAsync(harness, collection, "Progressive", collection.Entries.Take(2).ToArray());
+        await harness.Session.FlushAsync();
+
+        var entry1 = board.Unranked.Entries[0];
+        var entry2 = board.Unranked.Entries[1];
+        foreach (var entry in new[] { entry1, entry2 })
+        {
+            var id = entry.Item.Value;
+            var videosHtml = $"""
+                <!DOCTYPE html><html><head><link rel="canonical" href="https://www.livechart.me/anime/{id}/videos?page=1" /></head><body>
+                <div class="lc-video" data-controller="video" data-video-id="1">
+                    <a href="https://www.youtube.com/watch?v=early{id}" class="lc-interactive-surface__interaction-delegate"></a>
+                    <div class="lcm3-text--title-md">OP</div>
+                </div>
+                </body></html>
+                """;
+            var profileHtml = $"""
+                <!DOCTYPE html><html><body>
+                <div data-controller="anime-details" data-anime-details-id="{id}">
+                    <a href="https://anilist.co/anime/{id}">AniList</a>
+                </div>
+                </body></html>
+                """;
+            harness.Handler.Add($"https://www.livechart.me/anime/{id}/videos", System.Net.HttpStatusCode.OK, System.Text.Encoding.UTF8.GetBytes(videosHtml), "text/html");
+            harness.Handler.Add($"https://www.livechart.me/anime/{id}", System.Net.HttpStatusCode.OK, System.Text.Encoding.UTF8.GetBytes(profileHtml), "text/html");
+        }
+
+        // Hold every profile request open until the test releases it.
+        TaskCompletionSource profileStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource releaseProfile = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        harness.Handler.BeforeResponse = async (request, token) =>
+        {
+            if (!request.RequestUri!.AbsolutePath.EndsWith("/videos", StringComparison.Ordinal))
+            {
+                profileStarted.TrySetResult();
+                await releaseProfile.Task.WaitAsync(token);
+            }
+        };
+
+        // Part 1: the video list is shown and durably saved while the profile request is still in flight.
+        var videosUrl1 = $"https://www.livechart.me/anime/{entry1.Item.Value}/videos";
+        var profileUrl1 = $"https://www.livechart.me/anime/{entry1.Item.Value}";
+        var requestsBefore = harness.Handler.RequestCount;
+        using (var details1 = new BoardEntryDetailsViewModel(board, entry1, harness.Session.Current))
+        {
+            var load = details1.EnsureLoadedAsync();
+            await profileStarted.Task.WaitAsync(TimeSpan.FromSeconds(15));
+
+            Assert.Equal(["OP"], details1.ThemeVideos.Select(v => v.Title));
+            Assert.True(details1.IsLoadingLiveData);
+            Assert.False(details1.IsLoadingVideos);
+            Assert.True(details1.HasNoOtherVideos); // The empty notice for loaded videos does not wait for the profile page.
+            Assert.Contains("anime details", details1.LiveDataStatus, StringComparison.Ordinal);
+            Assert.Null(details1.AniListUrl);
+            var savedVideos = harness.Session.Durable.ItemExtras[entry1.Item];
+            Assert.True(savedVideos.VideosFetched);
+            Assert.False(savedVideos.ProfileFetched);
+
+            releaseProfile.TrySetResult();
+            await load;
+
+            // Same requests in the same order as before: videos page first, then the profile page.
+            Assert.Equal([videosUrl1, profileUrl1], harness.Handler.Requests.Skip(requestsBefore).Select(r => r.RequestUri!.AbsoluteUri));
+
+            Assert.Equal(new Uri($"https://anilist.co/anime/{entry1.Item.Value}"), details1.AniListUrl);
+            Assert.False(details1.IsLoadingLiveData);
+            Assert.True(details1.HasCachedLiveData);
+            Assert.Empty(details1.LiveDataError);
+        }
+
+        // Part 2: closing the dialog while the profile page loads keeps the already-fetched videos.
+        profileStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        releaseProfile = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        var videosUrl2 = $"https://www.livechart.me/anime/{entry2.Item.Value}/videos";
+        using var details2 = new BoardEntryDetailsViewModel(board, entry2, harness.Session.Current);
+        var load2 = details2.EnsureLoadedAsync();
+        await profileStarted.Task.WaitAsync(TimeSpan.FromSeconds(15));
+        details2.Dispose();
+        await load2.WaitAsync(TimeSpan.FromSeconds(5)); // Closing must cancel the held profile request, not wait out HTTP timeouts.
+
+        var kept = harness.Session.Durable.ItemExtras[entry2.Item];
+        Assert.Equal(["OP"], kept.Videos.Select(v => v.Title));
+        Assert.True(kept.VideosFetched);
+        Assert.False(kept.ProfileFetched);
+
+        // Reopening shows the saved videos at once and fetches only the missing profile page.
+        releaseProfile.TrySetResult();
+        var videoRequestsBefore = harness.Handler.CountFor(videosUrl2);
+        using var reopened = new BoardEntryDetailsViewModel(board, entry2, harness.Session.Current);
+        Assert.Equal(["OP"], reopened.ThemeVideos.Select(v => v.Title));
+        await reopened.EnsureLoadedAsync();
+        Assert.Equal(videoRequestsBefore, harness.Handler.CountFor(videosUrl2));
+        Assert.Equal(new Uri($"https://anilist.co/anime/{entry2.Item.Value}"), reopened.AniListUrl);
+        Assert.True(reopened.HasCachedLiveData);
+    });
+
     private sealed class ToggleFailStore(Application.Storage.IProjectStore inner, Func<bool> shouldFail) : Application.Storage.IProjectStore
     {
         public Task<Application.Storage.ProjectData> LoadAsync(CancellationToken cancellationToken) => inner.LoadAsync(cancellationToken);
