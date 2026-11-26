@@ -6,7 +6,7 @@
     <RootNamespace>AnimeTierlist.Desktop</RootNamespace>
     <AssemblyName>AnimeTierlist</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <Description>Portable Windows desktop app for ranking anime seasons from LiveChart.</Description>
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
     <!-- Portable Windows x64 distribution with its own runtime. Libraries stay RID-neutral. -->
