@@ -29,6 +29,7 @@ public partial class MainWindow : Window
     {
         Services.ThemeManager.EnsureViewResources(this);
         InitializeComponent();
+        Overlays.Workspace = WorkspaceRoot;
         DataContextChanged += OnDataContextChanged;
         Loaded += OnWindowLoaded;
     }
@@ -61,6 +62,8 @@ public partial class MainWindow : Window
     {
         if (e.PropertyName == nameof(ShellViewModel.Project))
         {
+            // Layers show the previous project's data; close them with it.
+            Overlays.CloseAll();
             _autoCollapsedSidebar = false;
             _userExpandedInCompact = false;
             AttachProjectListeners();
@@ -106,10 +109,30 @@ public partial class MainWindow : Window
     /// <summary>Routes Alt+I and Alt+X window-wide when a collection is active so compact widths match wide AccessKey reach.</summary>
     private void OnWindowPreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (Overlays.IsOpen)
+        {
+            e.Handled = HandleOverlayKey(e);
+            return;
+        }
+
         if (TryHandleCollectionAccessKey(Shell, Keyboard.Modifiers, e.Key, e.SystemKey))
         {
             e.Handled = true;
         }
+    }
+
+    /// <summary>
+    /// While a layer is open, Esc closes it, and the window's own shortcuts (undo, redo, sidebar, help) do nothing,
+    /// so they cannot change the board behind the layer.
+    /// </summary>
+    private bool HandleOverlayKey(KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape && Keyboard.Modifiers == ModifierKeys.None)
+        {
+            return Overlays.HandleEscape();
+        }
+
+        return InputBindings.OfType<InputBinding>().Any(binding => binding.Gesture?.Matches(this, e) == true);
     }
 
     /// <summary>Executes collection-wide Include All (Alt+I) or Exclude All (Alt+X) when exact Alt is pressed.</summary>
@@ -379,6 +402,8 @@ public partial class MainWindow : Window
     /// </summary>
     private async void OnClosing(object? sender, CancelEventArgs e)
     {
+        // Stop video playback and release the details view model before the project closes.
+        Overlays.CloseAll();
         if (_closeConfirmed || Shell is not { } shell)
         {
             return;

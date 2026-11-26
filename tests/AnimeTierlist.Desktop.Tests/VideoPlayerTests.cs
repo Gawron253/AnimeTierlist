@@ -105,10 +105,11 @@ public sealed class VideoPlayerTests
     }
 
     /// <summary>
-    /// Opt-in live check of the real player window against YouTube. Set <c>ANIMETIERLIST_LIVE_PLAYER_CHECK</c> to a
+    /// Opt-in live check of the real player view against YouTube. Set <c>ANIMETIERLIST_LIVE_PLAYER_CHECK</c> to a
     /// comma-separated list of YouTube links. Each video must start playing or reach a reviewed fallback reason
     /// (embedding disabled, removed); identification, start, and reachability failures fail the check. Set
-    /// <c>ANIMETIERLIST_LIVE_PLAYER_SCREENSHOTS</c> to a folder to save a capture of the player window only.
+    /// <c>ANIMETIERLIST_LIVE_PLAYER_SCREENSHOTS</c> to a folder to save a capture of the main window only, as window
+    /// sharing (for example in Discord) sees it.
     /// </summary>
     [Fact]
     public async Task Live_player_plays_or_falls_back_when_requested()
@@ -139,10 +140,16 @@ public sealed class VideoPlayerTests
                     Assert.True(YouTubeVideoId.TryParse(url, out var id), $"{link} is not a playable YouTube link.");
                     var player = new VideoPlayerViewModel("OP", link, url, id, dialogs: null);
                     // Topmost keeps the window unoccluded, so the browser keeps rendering and autoplay is not deferred.
-                    var window = new VideoPlayerWindow(player, environment) { ShowActivated = false, Topmost = true, WindowStartupLocation = WindowStartupLocation.Manual, Left = 0, Top = 0 };
+                    // The player opens as a layer in the main window, as in the app, so the capture is of that window only.
+                    var window = new MainWindow
+                    {
+                        Width = 1100, Height = 760, ShowActivated = false, Topmost = true,
+                        WindowStartupLocation = WindowStartupLocation.Manual, Left = 0, Top = 0,
+                    };
                     try
                     {
                         window.Show();
+                        window.Overlays.Show(new VideoPlayerView(player, environment));
                         var deadline = DateTime.UtcNow + YouTubePlayerPolicy.ReadyTimeout + TimeSpan.FromSeconds(5);
                         while (player.IsStarting && DateTime.UtcNow < deadline)
                         {
@@ -168,6 +175,7 @@ public sealed class VideoPlayerTests
                     }
                     finally
                     {
+                        window.Overlays.CloseAll();
                         window.Close();
                     }
                 }
@@ -196,7 +204,7 @@ public sealed class VideoPlayerTests
         }
     }
 
-    /// <summary>Captures only the given window, including its WebView2 content, to a PNG file.</summary>
+    /// <summary>Captures only the given window, including its WebView2 child window, to a PNG file.</summary>
     private static void CaptureWindow(Window window, string path)
     {
         var hwnd = new WindowInteropHelper(window).Handle;

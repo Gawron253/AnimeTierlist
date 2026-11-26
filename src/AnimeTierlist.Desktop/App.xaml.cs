@@ -32,7 +32,7 @@ public partial class App : System.Windows.Application
 
         var window = new MainWindow();
         themes.AttachWindow(window);
-        _services.Dialogs = new WpfDialogService(window, themes, _services.VideoPlayer);
+        _services.Dialogs = new WpfDialogService(window, window.Overlays, themes, _services.VideoPlayer);
         window.DataContext = new ShellViewModel(_services);
         MainWindow = window;
         window.Show();
