@@ -491,6 +491,20 @@
         <Setter Property="BorderBrush" Value="{DynamicResource Brush.BorderSubtle}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="Padding" Value="4" />
+        <!-- The system template paints a disabled list white, which turns grey behind the in-window details scrim.
+             This one keeps the list's own background when disabled. -->
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListBox">
+                    <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}" Padding="1" SnapsToDevicePixels="True">
+                        <ScrollViewer Focusable="False" Padding="{TemplateBinding Padding}">
+                            <ItemsPresenter SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" />
+                        </ScrollViewer>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <!-- Implicit styles match the exact type, so the ListBox subclass needs its own entry or it falls back to the system's white background. -->

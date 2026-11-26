@@ -107,6 +107,28 @@ public sealed class UiDesignAndFunctionalityTests
         return Task.CompletedTask;
     });
 
+    /// <summary>
+    /// Lists behind the in-window details layer are disabled. The system template painted disabled lists white, which
+    /// showed as grey panels through the scrim; the themed template keeps the list's own background.
+    /// </summary>
+    [Fact]
+    public Task Disabled_lists_keep_their_theme_background() => Ui.RunAsync(() =>
+    {
+        ThemeManager.EnsurePackUriRegistered();
+        var list = new ListBox { IsEnabled = false };
+        list.Items.Add("One");
+        var host = new Border { Width = 300, Height = 200, Child = list };
+        ThemeManager.ApplyToDictionary(host.Resources, AppTheme.Dark);
+        host.Measure(new Size(300, 200));
+        host.Arrange(new Rect(0, 0, 300, 200));
+        host.UpdateLayout();
+
+        var expected = Assert.IsType<SolidColorBrush>(host.FindResource("Brush.BgSurface")).Color;
+        var chrome = Descendants<Border>(list).First();
+        Assert.Equal(expected, Assert.IsType<SolidColorBrush>(chrome.Background).Color);
+        return Task.CompletedTask;
+    });
+
     [Fact]
     public void Board_drop_calculator_matches_left_right_halves_and_wrapped_rows()
     {
