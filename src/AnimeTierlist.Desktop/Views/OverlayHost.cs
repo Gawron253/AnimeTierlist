@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Threading;
 
 namespace AnimeTierlist.Desktop.Views;
 
@@ -47,9 +48,6 @@ public sealed class OverlayHost : Grid
         KeyboardNavigation.SetDirectionalNavigation(this, KeyboardNavigationMode.Contained);
     }
 
-    /// <summary>Raised after the first layer opens or the last layer closes.</summary>
-    public event EventHandler? IsOpenChanged;
-
     /// <summary>The window content disabled while a layer is open, so it takes no input behind the layer.</summary>
     public UIElement? Workspace { get; set; }
 
@@ -83,8 +81,6 @@ public sealed class OverlayHost : Grid
             {
                 Workspace.IsEnabled = false;
             }
-
-            IsOpenChanged?.Invoke(this, EventArgs.Empty);
         }
     }
 
@@ -107,7 +103,11 @@ public sealed class OverlayHost : Grid
         }
     }
 
-    /// <summary>Esc closes the top layer, except while it fills the window (the video handles its own full screen).</summary>
+    /// <summary>
+    /// Esc closes the top layer, except while it fills the window (the video handles its own full screen). With the
+    /// video focused, WebView2 forwards Esc from a callback where the browser must not be disposed, so the layer
+    /// closes after the key event returns, and only if it is still the top layer.
+    /// </summary>
     public bool HandleEscape()
     {
         if (Top is not { } top)
@@ -117,7 +117,13 @@ public sealed class OverlayHost : Grid
 
         if (!top.IsFullWindow)
         {
-            Close(top);
+            _ = Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
+            {
+                if (ReferenceEquals(Top, top))
+                {
+                    Close(top);
+                }
+            });
         }
 
         return true;
@@ -151,8 +157,6 @@ public sealed class OverlayHost : Grid
             {
                 Workspace.IsEnabled = true;
             }
-
-            IsOpenChanged?.Invoke(this, EventArgs.Empty);
         }
 
         if (layer.RestoreFocus is UIElement { IsVisible: true, IsEnabled: true, Focusable: true } restore)

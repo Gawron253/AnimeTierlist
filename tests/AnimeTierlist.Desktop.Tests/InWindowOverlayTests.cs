@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 using AnimeTierlist.Core;
 using AnimeTierlist.Desktop.ViewModels;
 using AnimeTierlist.Desktop.Views;
@@ -16,7 +17,7 @@ namespace AnimeTierlist.Desktop.Tests;
 public sealed class InWindowOverlayTests
 {
     [Fact]
-    public Task Layers_stack_inside_the_main_window_and_disable_the_workspace_until_the_last_closes() => Ui.RunAsync(() =>
+    public Task Layers_stack_inside_the_main_window_and_disable_the_workspace_until_the_last_closes() => Ui.RunAsync(async () =>
     {
         var window = new MainWindow();
         var overlays = window.Overlays;
@@ -38,8 +39,10 @@ public sealed class InWindowOverlayTests
         Assert.Equal(Visibility.Collapsed, CardOf(details).Visibility);
         Assert.Equal(Visibility.Visible, CardOf(player).Visibility);
 
-        // Esc closes only the top layer.
+        // Esc closes only the top layer, after the key event returns.
         Assert.True(overlays.HandleEscape());
+        Assert.Equal(0, player.ClosedCount);
+        await DispatcherIdleAsync();
         Assert.Equal(1, player.ClosedCount);
         Assert.Null(VisualTreeHelper.GetParent(player));
         Assert.Same(details, overlays.Top);
@@ -57,7 +60,25 @@ public sealed class InWindowOverlayTests
         details.RequestClose();
         Assert.Equal(1, details.ClosedCount);
         Assert.False(overlays.HandleEscape());
-        return Task.CompletedTask;
+    });
+
+    [Fact]
+    public Task A_queued_escape_does_not_close_the_layer_revealed_after_its_target_already_closed() => Ui.RunAsync(async () =>
+    {
+        var window = new MainWindow();
+        var overlays = window.Overlays;
+        var details = new FakeOverlayView();
+        var player = new FakeOverlayView();
+        overlays.Show(details);
+        overlays.Show(player);
+
+        // Esc is queued for the player, which then closes another way (its Close button) before the queue runs.
+        Assert.True(overlays.HandleEscape());
+        player.RequestClose();
+        await DispatcherIdleAsync();
+        Assert.Equal(1, player.ClosedCount);
+        Assert.Equal(0, details.ClosedCount);
+        Assert.Same(details, overlays.Top);
     });
 
     [Fact]
@@ -89,7 +110,7 @@ public sealed class InWindowOverlayTests
     });
 
     [Fact]
-    public Task A_full_window_video_fills_the_window_and_ignores_escape_until_it_leaves_full_screen() => Ui.RunAsync(() =>
+    public Task A_full_window_video_fills_the_window_and_ignores_escape_until_it_leaves_full_screen() => Ui.RunAsync(async () =>
     {
         var window = new MainWindow();
         var overlays = window.Overlays;
@@ -105,18 +126,19 @@ public sealed class InWindowOverlayTests
         Assert.True(double.IsPositiveInfinity(card.MaxWidth));
         Assert.True(double.IsPositiveInfinity(card.MaxHeight));
         Assert.True(overlays.HandleEscape());
+        await DispatcherIdleAsync();
         Assert.Equal(0, player.ClosedCount);
 
         player.SetFullWindow(false);
         Assert.Equal(new Thickness(24), card.Margin);
         Assert.Equal(1040, card.MaxWidth);
         Assert.True(overlays.HandleEscape());
+        await DispatcherIdleAsync();
         Assert.Equal(1, player.ClosedCount);
-        return Task.CompletedTask;
     });
 
     [Fact]
-    public Task Window_shortcuts_are_swallowed_while_a_layer_is_open_and_escape_closes_it() => Ui.RunAsync(() =>
+    public Task Window_shortcuts_are_swallowed_while_a_layer_is_open_and_escape_closes_it() => Ui.RunAsync(async () =>
     {
         var window = new MainWindow();
         var source = new DummyPresentationSource(window);
@@ -134,10 +156,12 @@ public sealed class InWindowOverlayTests
         // Keys the window does not bind pass through to the layer.
         Assert.False(PressPreview(window, source, Key.Tab));
 
+        // Esc closes after the key event returns: WebView2 forwards it from a callback where the browser must not be disposed.
         Assert.True(PressPreview(window, source, Key.Escape));
+        Assert.Equal(0, layer.ClosedCount);
+        await DispatcherIdleAsync();
         Assert.Equal(1, layer.ClosedCount);
         Assert.False(window.Overlays.IsOpen);
-        return Task.CompletedTask;
     });
 
     [Fact]
@@ -193,6 +217,9 @@ public sealed class InWindowOverlayTests
     });
 
     private static Border CardOf(FrameworkElement view) => Assert.IsType<Border>(view.Parent);
+
+    /// <summary>Runs queued input-priority work, such as a deferred Esc close.</summary>
+    private static Task DispatcherIdleAsync() => Dispatcher.CurrentDispatcher.InvokeAsync(() => { }, DispatcherPriority.Background).Task;
 
     private static bool PressPreview(UIElement target, PresentationSource source, Key key)
     {
