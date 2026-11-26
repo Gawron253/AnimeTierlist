@@ -6,13 +6,44 @@ Builds the portable Windows release: out/AnimeTierlist-<version>-win-x64.zip plu
 Publishes the self-contained win-x64 desktop app in Release with locked package restore, strips debug symbols and
 local build paths, adds README.md, LICENSE, THIRD_PARTY_NOTICES.md, and upstream third-party license files under
 licenses/, zips the folder, and writes "<hash>  <file>" to a .sha256 file next to the ZIP. Nothing is uploaded.
-Run from any directory with the pinned .NET SDK on PATH.
+Run from any directory. The script uses the first dotnet that has an SDK matching global.json, checking PATH, then
+DOTNET_ROOT, then the user-level install folders (%LOCALAPPDATA%\Microsoft\dotnet and %USERPROFILE%\.dotnet).
 #>
 [CmdletBinding()]
 param()
 
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+
+# The dotnet on PATH may have only runtimes while the SDK sits in a user-level install that PATH does not reach.
+$sdkVersion = (Get-Content (Join-Path $root 'global.json') -Raw | ConvertFrom-Json).sdk.version
+$dotnetCandidates = New-Object System.Collections.Generic.List[string]
+$pathDotnet = Get-Command dotnet -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($pathDotnet) { $dotnetCandidates.Add($pathDotnet.Source) }
+$dotnetDirs = @($env:DOTNET_ROOT)
+if ($env:LOCALAPPDATA) { $dotnetDirs += Join-Path $env:LOCALAPPDATA 'Microsoft\dotnet' }
+if ($env:USERPROFILE) { $dotnetDirs += Join-Path $env:USERPROFILE '.dotnet' }
+foreach ($dir in $dotnetDirs) {
+    if ($dir) { $dotnetCandidates.Add((Join-Path $dir 'dotnet.exe')) }
+}
+$dotnet = $null
+Push-Location $root
+# Windows PowerShell turns redirected native stderr into errors, so probe failures must not stop the script.
+$ErrorActionPreference = 'Continue'
+try {
+    foreach ($candidate in $dotnetCandidates) {
+        if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) { continue }
+        & $candidate --version *> $null
+        if ($LASTEXITCODE -eq 0) { $dotnet = (Resolve-Path -LiteralPath $candidate).Path; break }
+    }
+} finally {
+    $ErrorActionPreference = 'Stop'
+    Pop-Location
+}
+if (-not $dotnet) {
+    throw "No .NET SDK matching global.json ($sdkVersion or a later patch in the same feature band) was found on PATH, in DOTNET_ROOT, or in the user-level dotnet folders. Install it from https://dotnet.microsoft.com/download/dotnet/10.0."
+}
+if (-not $pathDotnet -or $dotnet -ne $pathDotnet.Source) { Write-Host "Using .NET SDK from $dotnet" }
 $projectDir = Join-Path $root 'src\AnimeTierlist.Desktop'
 $project = Join-Path $projectDir 'AnimeTierlist.Desktop.csproj'
 $version = (Select-Xml -Path $project -XPath '//Version').Node.InnerText
@@ -26,7 +57,7 @@ foreach ($path in @($stage, $zip, "$zip.sha256")) { if (Test-Path $path) { Remov
 
 Push-Location $root
 try {
-    dotnet publish $project -c Release -o $stage `
+    & $dotnet publish $project -c Release -o $stage `
         -p:RestoreLockedMode=true `
         -p:DebugType=none `
         -p:DebugSymbols=false `
@@ -61,11 +92,8 @@ $packageRoots = New-Object System.Collections.Generic.List[string]
 foreach ($folder in $assets.packageFolders.PSObject.Properties.Name) {
     if (Test-Path $folder) { $packageRoots.Add($folder) }
 }
-$dotnetCmd = Get-Command dotnet -ErrorAction SilentlyContinue
-if ($dotnetCmd) {
-    $packsDir = Join-Path (Split-Path -Parent $dotnetCmd.Source) 'packs'
-    if (Test-Path $packsDir) { $packageRoots.Add($packsDir) }
-}
+$packsDir = Join-Path (Split-Path -Parent $dotnet) 'packs'
+if (Test-Path $packsDir) { $packageRoots.Add($packsDir) }
 if ($env:DOTNET_ROOT) {
     $rootPacks = Join-Path $env:DOTNET_ROOT 'packs'
     if ((Test-Path $rootPacks) -and (-not $packageRoots.Contains($rootPacks))) { $packageRoots.Add($rootPacks) }

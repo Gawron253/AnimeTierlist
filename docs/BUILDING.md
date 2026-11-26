@@ -52,6 +52,8 @@ Run the release script to build the portable ZIP and SHA-256 checksum:
 .\tools\release\Build-Release.ps1
 ```
 
+The script uses the first `dotnet` with an SDK matching `global.json`, checking `PATH`, then `DOTNET_ROOT`, then the user-level folders `%LOCALAPPDATA%\Microsoft\dotnet` and `%USERPROFILE%\.dotnet`. A user-level SDK therefore works even when the `dotnet` on `PATH` (usually `C:\Program Files\dotnet`) has only runtimes.
+
 The script writes `out\AnimeTierlist-<version>-win-x64.zip` and `out\AnimeTierlist-<version>-win-x64.zip.sha256`, packaging `README.md`, `LICENSE`, `THIRD_PARTY_NOTICES.md`, and upstream third-party notices under `licenses/`. It does not upload or publish anything.
 
 Running `AnimeTierlist.exe` creates `data\` next to the executable. If that directory is not writable, the app asks for another data directory for the current session.
