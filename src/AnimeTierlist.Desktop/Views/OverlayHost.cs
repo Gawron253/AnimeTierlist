@@ -30,7 +30,9 @@ public interface IOverlayView
 /// <summary>
 /// Shows dialogs as modal layers inside the main window instead of separate windows, so window capture (such as
 /// sharing the application in Discord) includes them. Only the top layer is visible; lower layers keep their
-/// state. While any layer is open the <see cref="Workspace"/> is disabled, and closing a layer restores focus.
+/// state. The scrim takes every click meant for the content behind it, access keys stay inside the layer, and the
+/// window keeps keys away from that content (see <c>MainWindow</c>). The content stays enabled so it does not
+/// switch to its grey disabled look behind the scrim. Closing a layer restores focus.
 /// </summary>
 public sealed class OverlayHost : Grid
 {
@@ -46,10 +48,8 @@ public sealed class OverlayHost : Grid
         KeyboardNavigation.SetTabNavigation(this, KeyboardNavigationMode.Cycle);
         KeyboardNavigation.SetControlTabNavigation(this, KeyboardNavigationMode.Cycle);
         KeyboardNavigation.SetDirectionalNavigation(this, KeyboardNavigationMode.Contained);
+        AccessKeyManager.AddAccessKeyPressedHandler(this, OnAccessKeyPressed);
     }
-
-    /// <summary>The window content disabled while a layer is open, so it takes no input behind the layer.</summary>
-    public UIElement? Workspace { get; set; }
 
     public bool IsOpen => _layers.Count > 0;
 
@@ -77,10 +77,15 @@ public sealed class OverlayHost : Grid
         if (_layers.Count == 1)
         {
             Visibility = Visibility.Visible;
-            if (Workspace is not null)
-            {
-                Workspace.IsEnabled = false;
-            }
+        }
+    }
+
+    /// <summary>Moves keyboard focus into the top layer.</summary>
+    public void FocusTop()
+    {
+        if (_layers.Count > 0)
+        {
+            _layers[^1].Card.MoveFocus(new TraversalRequest(FocusNavigationDirection.First));
         }
     }
 
@@ -153,10 +158,6 @@ public sealed class OverlayHost : Grid
         else
         {
             Visibility = Visibility.Collapsed;
-            if (Workspace is not null)
-            {
-                Workspace.IsEnabled = true;
-            }
         }
 
         if (layer.RestoreFocus is UIElement { IsVisible: true, IsEnabled: true, Focusable: true } restore)
@@ -197,6 +198,16 @@ public sealed class OverlayHost : Grid
             card.BorderThickness = new Thickness(1);
             card.CornerRadius = new CornerRadius(10);
             card.VerticalAlignment = layer.View.FillsHeight ? VerticalAlignment.Stretch : VerticalAlignment.Center;
+        }
+    }
+
+    /// <summary>Alt+letter keys pressed inside a layer only reach that layer's buttons, not the content behind it.</summary>
+    private void OnAccessKeyPressed(object sender, AccessKeyPressedEventArgs e)
+    {
+        if (!e.Handled && e.Scope is null)
+        {
+            e.Scope = this;
+            e.Handled = true;
         }
     }
 
