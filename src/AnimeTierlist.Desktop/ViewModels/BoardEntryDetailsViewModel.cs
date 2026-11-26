@@ -158,9 +158,13 @@ public sealed partial class BoardEntryDetailsViewModel : ObservableObject, IDisp
     private string _selectedVideoTab = ThemesTab;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasNoThemeVideos), nameof(HasNoOtherVideos))]
     [NotifyCanExecuteChangedFor(nameof(RefreshLiveDataCommand), nameof(RetryLiveDataCommand), nameof(RetrySaveCommand))]
     private bool _isLoadingLiveData;
+
+    /// <summary>True while the videos pages are being fetched; the profile page may still load after this clears.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasNoThemeVideos), nameof(HasNoOtherVideos))]
+    private bool _isLoadingVideos;
 
     [ObservableProperty]
     private string _liveDataStatus = string.Empty;
@@ -348,9 +352,9 @@ public sealed partial class BoardEntryDetailsViewModel : ObservableObject, IDisp
 
     public bool ShowOtherVideos => SelectedVideoTab == OtherTab;
 
-    public bool HasNoThemeVideos => !IsLoadingLiveData && _hasLoadedVideos && !_lastVideosFailed && ThemeVideos.Count == 0;
+    public bool HasNoThemeVideos => !IsLoadingVideos && _hasLoadedVideos && !_lastVideosFailed && ThemeVideos.Count == 0;
 
-    public bool HasNoOtherVideos => !IsLoadingLiveData && _hasLoadedVideos && !_lastVideosFailed && OtherVideos.Count == 0;
+    public bool HasNoOtherVideos => !IsLoadingVideos && _hasLoadedVideos && !_lastVideosFailed && OtherVideos.Count == 0;
 
     /// <summary>
     /// Automatically fetches any missing on-demand videos or profile details from LiveChart on first open.
@@ -527,71 +531,85 @@ public sealed partial class BoardEntryDetailsViewModel : ObservableObject, IDisp
     {
         CancelPendingLoads();
         var cts = CancellationTokenSource.CreateLinkedTokenSource(_board.Project.Lifetime);
+        var token = cts.Token;
         _fetchCts = cts;
 
         IsLoadingLiveData = true;
+        IsLoadingVideos = fetchVideos;
         LiveDataError = string.Empty;
-        LiveDataStatus = (fetchVideos, fetchProfile) switch
-        {
-            (true, true) => "Loading videos, anime details, and external links from LiveChart...",
-            (true, false) => "Loading OP/ED and promotional videos from LiveChart...",
-            (false, true) => "Loading anime details and external links from LiveChart...",
-            _ => string.Empty,
-        };
+        LiveDataStatus = fetchVideos
+            ? "Loading OP/ED and promotional videos from LiveChart..."
+            : "Loading anime details and external links from LiveChart...";
 
         try
         {
-            var outcome = await _board.Project.App.AnimeDetails.FetchAsync(Item, fetchVideos, fetchProfile, RetryBudget.CreateDefault(), cts.Token);
-            if (cts.IsCancellationRequested)
-            {
-                return;
-            }
-
-            var updated = false;
+            // Videos and profile are fetched as two sequential calls so the video list appears (and is saved) as soon as
+            // its pages arrive, instead of waiting for the paced profile request. The request order and pacing are unchanged.
+            var budget = RetryBudget.CreateDefault();
+            AnimeDetailsFetchFailure? videosFailure = null;
+            AnimeDetailsFetchFailure? profileFailure = null;
             if (fetchVideos)
             {
-                _lastVideosFailed = outcome.VideosFailure is not null;
+                var outcome = await _board.Project.App.AnimeDetails.FetchAsync(Item, fetchVideos: true, fetchProfile: false, budget, token);
+                if (token.IsCancellationRequested)
+                {
+                    return;
+                }
+
+                videosFailure = outcome.VideosFailure;
+                _lastVideosFailed = videosFailure is not null;
                 if (outcome.Videos is { } fetchedVideos)
                 {
                     _cachedVideos = fetchedVideos;
                     _hasLoadedVideos = true;
                     ApplyVideos(_cachedVideos, autoSelectOtherIfNoThemes: true);
-                    updated = true;
+                }
+
+                IsLoadingVideos = false;
+                if (fetchProfile)
+                {
+                    LiveDataStatus = "Loading anime details and external links from LiveChart...";
+                }
+
+                if (outcome.Videos is not null)
+                {
+                    await PersistExtrasAsync(CurrentExtras(outcome.RetrievedAtUtc));
                 }
             }
 
-            if (fetchProfile)
+            if (fetchProfile && !token.IsCancellationRequested)
             {
-                _lastProfileFailed = outcome.ProfileFailure is not null;
+                var outcome = await _board.Project.App.AnimeDetails.FetchAsync(Item, fetchVideos: false, fetchProfile: true, budget, token);
+                if (token.IsCancellationRequested)
+                {
+                    return;
+                }
+
+                profileFailure = outcome.ProfileFailure;
+                _lastProfileFailed = profileFailure is not null;
                 if (outcome.ProfileDetails is { } fetchedProfile)
                 {
                     // Persist only LiveChart profile data in the item-wide cache; never store collection-specific snapshot fields there.
                     _cachedProfileDetails = fetchedProfile;
                     _hasLoadedProfile = true;
                     ApplyDetails(_cachedProfileDetails.MergeWith(_snapshotDetails));
-                    updated = true;
+                    await PersistExtrasAsync(CurrentExtras(outcome.RetrievedAtUtc));
                 }
             }
 
             var errors = new List<string>();
-            if (updated)
-            {
-                var toStore = new AnimeExtraDetails(Item, outcome.RetrievedAtUtc, _cachedProfileDetails, _cachedVideos, _hasLoadedVideos, _hasLoadedProfile);
-                await PersistExtrasAsync(toStore);
-            }
-
-            if (outcome.VideosFailure is { } vf)
+            if (videosFailure is { } vf)
             {
                 errors.Add(vf.Kind == SeasonPageFailure.Unreachable
                     ? await NetworkHint.DescribeUnreachableAsync()
                     : $"Videos: {vf.Detail}");
             }
 
-            if (outcome.ProfileFailure is { } pf)
+            if (profileFailure is { } pf)
             {
                 if (pf.Kind == SeasonPageFailure.Unreachable)
                 {
-                    if (outcome.VideosFailure?.Kind != SeasonPageFailure.Unreachable)
+                    if (videosFailure?.Kind != SeasonPageFailure.Unreachable)
                     {
                         errors.Add(await NetworkHint.DescribeUnreachableAsync());
                     }
@@ -624,11 +642,15 @@ public sealed partial class BoardEntryDetailsViewModel : ObservableObject, IDisp
             }
 
             cts.Dispose();
+            IsLoadingVideos = false;
             IsLoadingLiveData = false;
             ShowOlderSnapshotHint = !HasExtendedDetails;
             SyncSaveState();
         }
     }
+
+    private AnimeExtraDetails CurrentExtras(DateTimeOffset retrievedAtUtc) =>
+        new(Item, retrievedAtUtc, _cachedProfileDetails, _cachedVideos, _hasLoadedVideos, _hasLoadedProfile);
 
     /// <summary>
     /// Persists fetched LiveChart extras to the project database and awaits durable commit confirmation.
