@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Windows.Data;
 using System.Windows.Media;
@@ -35,6 +37,19 @@ public enum CollectionFilterMode
 }
 
 /// <summary>
+/// One choice in a details filter list. <see cref="Value"/> is <see cref="AnyValue"/> for no filter and
+/// <see cref="UnknownValue"/> for shows without the detail; the label carries the matching show count.
+/// </summary>
+public sealed record FilterOption(string Value, string Label)
+{
+    public const string AnyValue = "*";
+    public const string UnknownValue = "?";
+
+    /// <summary>Screen readers and UI Automation announce the label, not the record shape.</summary>
+    public override string ToString() => Label;
+}
+
+/// <summary>
 /// Curation of one collection: inclusion, explicit manual order, title language and overrides, cover acquisition,
 /// reviewed cover recovery, reviewed refresh, and deletion. Search and filter chips only filter the view;
 /// they never change membership, order, or export scope.
@@ -53,6 +68,13 @@ public sealed partial class CollectionViewModel : ObservableObject
     private bool _scanning;
     private bool _showingDamageSummary;
     private bool _initialized;
+    private bool _rebuildingFilterOptions;
+    private string _openingFilter = FilterOption.AnyValue;
+    private string _sourceFilter = FilterOption.AnyValue;
+    private string _formatFilter = FilterOption.AnyValue;
+    private string _genreFilter = FilterOption.AnyValue;
+    private string _studioFilter = FilterOption.AnyValue;
+    private string _ratingFilter = FilterOption.AnyValue;
 
     [ObservableProperty]
     private string _name = string.Empty;
@@ -94,8 +116,45 @@ public sealed partial class CollectionViewModel : ObservableObject
     private int _needsAttentionCount;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(FilterSummary), nameof(IncludeVisibleLabel))]
+    [NotifyPropertyChangedFor(nameof(FilterSummary), nameof(IncludeVisibleLabel), nameof(ExcludeVisibleLabel))]
     private int _visibleCount;
+
+    [ObservableProperty]
+    private bool _showDetailFilters;
+
+    [ObservableProperty]
+    private IReadOnlyList<FilterOption> _openingOptions = [new(FilterOption.AnyValue, "Any OP status")];
+
+    [ObservableProperty]
+    private IReadOnlyList<FilterOption> _sourceOptions = [new(FilterOption.AnyValue, "All sources")];
+
+    [ObservableProperty]
+    private IReadOnlyList<FilterOption> _formatOptions = [new(FilterOption.AnyValue, "All formats")];
+
+    [ObservableProperty]
+    private IReadOnlyList<FilterOption> _genreOptions = [new(FilterOption.AnyValue, "All genres")];
+
+    [ObservableProperty]
+    private IReadOnlyList<FilterOption> _studioOptions = [new(FilterOption.AnyValue, "All studios")];
+
+    [ObservableProperty]
+    private IReadOnlyList<FilterOption> _ratingOptions = [new(FilterOption.AnyValue, "Any rating")];
+
+    [ObservableProperty]
+    private int _missingDetailsCount;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowInlineFetchDetails))]
+    private bool _isFetchingDetails;
+
+    [ObservableProperty]
+    private string _detailsStatus = string.Empty;
+
+    [ObservableProperty]
+    private int _detailsProgressCompleted;
+
+    [ObservableProperty]
+    private int _detailsProgressTotal = 1;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsGridView), nameof(IsListView))]
@@ -111,7 +170,7 @@ public sealed partial class CollectionViewModel : ObservableObject
     private int _compactViewportLevel;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ShowInlineBulkActions))]
+    [NotifyPropertyChangedFor(nameof(ShowInlineBulkActions), nameof(ShowInlineFetchDetails))]
     private bool _isNarrowToolbar;
 
     [ObservableProperty]
@@ -208,6 +267,57 @@ public sealed partial class CollectionViewModel : ObservableObject
 
     public string IncludeVisibleLabel => $"Include shown ({VisibleCount})";
 
+    public string ExcludeVisibleLabel => $"Exclude shown ({VisibleCount})";
+
+    /// <summary>Filter by LiveChart's opening videos: any, has an OP, no OP, or videos not fetched yet.</summary>
+    public string OpeningFilter
+    {
+        get => _openingFilter;
+        set => SetDetailFilter(ref _openingFilter, value);
+    }
+
+    public string SourceFilter
+    {
+        get => _sourceFilter;
+        set => SetDetailFilter(ref _sourceFilter, value);
+    }
+
+    public string FormatFilter
+    {
+        get => _formatFilter;
+        set => SetDetailFilter(ref _formatFilter, value);
+    }
+
+    public string GenreFilter
+    {
+        get => _genreFilter;
+        set => SetDetailFilter(ref _genreFilter, value);
+    }
+
+    public string StudioFilter
+    {
+        get => _studioFilter;
+        set => SetDetailFilter(ref _studioFilter, value);
+    }
+
+    /// <summary>A minimum LiveChart rating such as <c>7.5</c>, or unrated shows only.</summary>
+    public string RatingFilter
+    {
+        get => _ratingFilter;
+        set => SetDetailFilter(ref _ratingFilter, value);
+    }
+
+    public int ActiveDetailFilterCount =>
+        new[] { _openingFilter, _sourceFilter, _formatFilter, _genreFilter, _studioFilter, _ratingFilter }.Count(f => f != FilterOption.AnyValue);
+
+    public bool HasDetailFilters => ActiveDetailFilterCount > 0;
+
+    public string DetailFiltersLabel => HasDetailFilters ? $"Filters ({ActiveDetailFilterCount})" : "Filters";
+
+    public string FetchDetailsToolTip => MissingDetailsCount == 0
+        ? "Details and videos for every show are saved in this project."
+        : $"Fetch LiveChart details and videos for the {MissingDetailsCount} shows that do not have them yet, one page every 5 seconds (about {EstimateDuration(MissingDetailsCount)}).";
+
     public ObservableCollection<EntryViewModel> Entries { get; } = [];
 
     public ICollectionView View { get; }
@@ -219,7 +329,7 @@ public sealed partial class CollectionViewModel : ObservableObject
 
     public bool HasSearchText => !string.IsNullOrWhiteSpace(SearchText);
 
-    public bool IsFiltered => FilterMode != CollectionFilterMode.All || !string.IsNullOrWhiteSpace(SearchText);
+    public bool IsFiltered => FilterMode != CollectionFilterMode.All || !string.IsNullOrWhiteSpace(SearchText) || HasDetailFilters;
 
     public bool CanReorder => !IsFiltered && !_project.EditsSuspended;
 
@@ -236,6 +346,9 @@ public sealed partial class CollectionViewModel : ObservableObject
 
     /// <summary>When narrow (&lt;1000 DIP), Include/Exclude all fold cleanly into the overflow menu so the filter bar stays single-row.</summary>
     public bool ShowInlineBulkActions => !IsNarrowToolbar;
+
+    /// <summary>The inline Fetch details button folds into the overflow menu on narrow viewports and gives way to Stop while running.</summary>
+    public bool ShowInlineFetchDetails => !IsNarrowToolbar && !IsFetchingDetails;
 
     public double TileWidth => IsCompactViewport
         ? 108
@@ -299,7 +412,8 @@ public sealed partial class CollectionViewModel : ObservableObject
         (int)Math.Ceiling((ViewMode == CollectionViewMode.List ? 60.0 : PosterHeight) * _dpiScale));
 
     public string FilterSummary => IsFiltered
-        ? $"Showing {VisibleCount} of {TotalCount} shows ({IncludedCount} included). Visual filter only; collection order and export scope are unchanged."
+        ? $"Showing {VisibleCount} of {TotalCount} shows ({IncludedCount} included). Visual filter only; collection order and export scope are unchanged." +
+          (HasDetailFilters && MissingDetailsCount > 0 ? $" {MissingDetailsCount} shows have no fetched details yet; Fetch details checks them." : string.Empty)
         : string.Empty;
 
     public IReadOnlyList<LanguageOption> LanguageOptions { get; } =
@@ -356,7 +470,8 @@ public sealed partial class CollectionViewModel : ObservableObject
                 var observed = state.Observation(entry.AcceptedOccurrence);
                 var asset = entry.Cover is { } cover && state.Assets.TryGetValue(cover.Asset, out var record) ? record : null;
                 var broken = asset is not null && _brokenAssets.Contains(asset.Hash);
-                view.Update(i + 1, entry, state.ResolveTitle(collection, entry), observed.Titles, asset, _coverStatuses.GetValueOrDefault(entry.Item), broken);
+                var facts = AnimeFacts.From(observed.Details, state.ItemExtras.GetValueOrDefault(entry.Item));
+                view.Update(i + 1, entry, state.ResolveTitle(collection, entry), observed.Titles, asset, _coverStatuses.GetValueOrDefault(entry.Item), broken, facts);
                 if (!view.HasCover)
                 {
                     noCover++;
@@ -375,6 +490,8 @@ public sealed partial class CollectionViewModel : ObservableObject
 
             NoCoverCount = noCover;
             NeedsAttentionCount = attention;
+            MissingDetailsCount = collection.Entries.Count(e => AnimeDetailsAcquisition.NeedsDetails(state, e.Item));
+            RebuildDetailFilterOptions();
             if (IsFiltered)
             {
                 View.Refresh();
@@ -491,7 +608,23 @@ public sealed partial class CollectionViewModel : ObservableObject
     {
         SearchText = string.Empty;
         FilterMode = CollectionFilterMode.All;
+        ClearDetailFilters();
     }
+
+    [RelayCommand]
+    private void ClearDetailFilters()
+    {
+        if (!HasDetailFilters)
+        {
+            return;
+        }
+
+        _openingFilter = _sourceFilter = _formatFilter = _genreFilter = _studioFilter = _ratingFilter = FilterOption.AnyValue;
+        OnDetailFiltersChanged();
+    }
+
+    [RelayCommand]
+    private void ToggleDetailFilters() => ShowDetailFilters = !ShowDetailFilters;
 
     [RelayCommand]
     private void SetViewMode(CollectionViewMode mode) => ViewMode = mode;
@@ -632,7 +765,67 @@ public sealed partial class CollectionViewModel : ObservableObject
         }
     }
 
+    [RelayCommand(CanExecute = nameof(CanEdit))]
+    private void ExcludeVisible()
+    {
+        var items = View.Cast<EntryViewModel>().Select(e => e.Item).ToList();
+        if (items.Count > 0)
+        {
+            Edit("Exclude shown entries", c => CollectionOperations.SetIncluded(c, items, false));
+        }
+    }
+
     private bool CanEdit() => !_project.EditsSuspended;
+
+    /// <summary>
+    /// Fetches LiveChart's details and videos for every show in the collection that lacks them, one show at a time at
+    /// LiveChart's pace. Each show is saved as it arrives, so stopping keeps what was fetched and a later run resumes.
+    /// </summary>
+    [RelayCommand(IncludeCancelCommand = true, CanExecute = nameof(CanEdit))]
+    private async Task FetchDetailsAsync(CancellationToken cancellationToken)
+    {
+        var state = _project.Session.Current;
+        if (!state.Collections.TryGetValue(Id, out var collection))
+        {
+            return;
+        }
+
+        var items = collection.Entries.Select(e => e.Item).ToList();
+        var missing = items.Count(i => AnimeDetailsAcquisition.NeedsDetails(state, i));
+        if (missing == 0)
+        {
+            DetailsStatus = $"Details and videos for all {items.Count} shows are already saved in this project.";
+            return;
+        }
+
+        if (_project.IsFetchingDetails)
+        {
+            DetailsStatus = "Another collection is fetching details. Wait for it to finish or stop it, then fetch details here.";
+            return;
+        }
+
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _project.Lifetime);
+        _project.IsFetchingDetails = true;
+        IsFetchingDetails = true;
+        DetailsProgressCompleted = 0;
+        DetailsProgressTotal = missing;
+        DetailsStatus = $"Fetching details and videos for {missing} shows from LiveChart, one page every 5 seconds (about {EstimateDuration(missing)}). You can keep working meanwhile.";
+        try
+        {
+            var progress = new Progress<DetailsRunReport>(ShowDetailsReport);
+            var report = await AnimeDetailsAcquisition.AcquireAsync(_project.Session, items, _project.App.AnimeDetails, RetryBudget.CreateDefault(), progress, linked.Token);
+            DetailsProgressCompleted = report.Done;
+            DetailsStatus = Describe(report) + (report.Outcome == DetailsRunOutcome.Unreachable ? " " + await NetworkHint.DescribeUnreachableAsync() : string.Empty);
+        }
+        finally
+        {
+            IsFetchingDetails = false;
+            _project.IsFetchingDetails = false;
+        }
+    }
+
+    [RelayCommand]
+    private void DismissDetailsStatus() => DetailsStatus = string.Empty;
 
     [RelayCommand(CanExecute = nameof(HasSelection))]
     private void ToggleSelected()
@@ -982,6 +1175,8 @@ public sealed partial class CollectionViewModel : ObservableObject
         IncludeVisibleCommand.NotifyCanExecuteChanged();
         RenameCommand.NotifyCanExecuteChanged();
         FetchCoversCommand.NotifyCanExecuteChanged();
+        FetchDetailsCommand.NotifyCanExecuteChanged();
+        ExcludeVisibleCommand.NotifyCanExecuteChanged();
         CheckForUpdatesCommand.NotifyCanExecuteChanged();
         ExportCoversCommand.NotifyCanExecuteChanged();
         DeleteCommand.NotifyCanExecuteChanged();
@@ -1221,6 +1416,11 @@ public sealed partial class CollectionViewModel : ObservableObject
             return true;
         }
 
+        if (HasDetailFilters && !MatchesDetailFilters(entry.Facts))
+        {
+            return false;
+        }
+
         var chipOk = FilterMode switch
         {
             CollectionFilterMode.Included => entry.Included,
@@ -1240,6 +1440,197 @@ public sealed partial class CollectionViewModel : ObservableObject
         }
 
         return entry.SearchText.Contains(SearchText.Trim(), StringComparison.CurrentCultureIgnoreCase);
+    }
+
+    private bool MatchesDetailFilters(AnimeFacts facts)
+    {
+        var opening = _openingFilter switch
+        {
+            "yes" => facts.HasOpening == true,
+            "no" => facts.HasOpening == false,
+            FilterOption.UnknownValue => facts.HasOpening is null,
+            _ => true,
+        };
+        var rating = _ratingFilter switch
+        {
+            FilterOption.AnyValue => true,
+            FilterOption.UnknownValue => facts.Rating is null,
+            var minimum => facts.Rating is { } r && double.TryParse(minimum, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var min) && r >= min,
+        };
+        return opening
+            && rating
+            && MatchesValue(_sourceFilter, facts.SourceMaterial)
+            && MatchesValue(_formatFilter, facts.Format)
+            && (_genreFilter == FilterOption.AnyValue || facts.Genres.Contains(_genreFilter, StringComparer.OrdinalIgnoreCase))
+            && (_studioFilter == FilterOption.AnyValue || facts.Studios.Contains(_studioFilter, StringComparer.OrdinalIgnoreCase));
+
+        static bool MatchesValue(string filter, string? value) => filter switch
+        {
+            FilterOption.AnyValue => true,
+            FilterOption.UnknownValue => value is null,
+            _ => string.Equals(value, filter, StringComparison.OrdinalIgnoreCase),
+        };
+    }
+
+    private void SetDetailFilter(ref string field, string? value, [CallerMemberName] string? name = null)
+    {
+        // A combo box clears its selection while its options are replaced; that is not a user choice.
+        if (_rebuildingFilterOptions || value is null || field == value)
+        {
+            return;
+        }
+
+        field = value;
+        OnPropertyChanged(name);
+        OnDetailFiltersChanged();
+    }
+
+    private void OnDetailFiltersChanged()
+    {
+        NotifyDetailFilterValues();
+        OnPropertyChanged(nameof(ActiveDetailFilterCount));
+        OnPropertyChanged(nameof(HasDetailFilters));
+        OnPropertyChanged(nameof(DetailFiltersLabel));
+        OnPropertyChanged(nameof(IsFiltered));
+        OnPropertyChanged(nameof(CanReorder));
+        OnPropertyChanged(nameof(FilterSummary));
+        MoveUpCommand.NotifyCanExecuteChanged();
+        MoveDownCommand.NotifyCanExecuteChanged();
+        MoveToTopCommand.NotifyCanExecuteChanged();
+        MoveToBottomCommand.NotifyCanExecuteChanged();
+        View.Refresh();
+        UpdateVisibleCount();
+        FilterOrSearchChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void NotifyDetailFilterValues()
+    {
+        OnPropertyChanged(nameof(OpeningFilter));
+        OnPropertyChanged(nameof(SourceFilter));
+        OnPropertyChanged(nameof(FormatFilter));
+        OnPropertyChanged(nameof(GenreFilter));
+        OnPropertyChanged(nameof(StudioFilter));
+        OnPropertyChanged(nameof(RatingFilter));
+    }
+
+    partial void OnMissingDetailsCountChanged(int value)
+    {
+        OnPropertyChanged(nameof(FetchDetailsToolTip));
+        OnPropertyChanged(nameof(FilterSummary));
+    }
+
+    /// <summary>
+    /// Rebuilds the details filter lists from the shown facts, with a show count per choice. A chosen value that no
+    /// show has any more falls back to no filter.
+    /// </summary>
+    private void RebuildDetailFilterOptions()
+    {
+        var facts = Entries.Select(e => e.Facts).ToList();
+        var opening = new List<FilterOption>
+        {
+            new(FilterOption.AnyValue, "Any OP status"),
+            new("yes", $"Has OP ({facts.Count(f => f.HasOpening == true)})"),
+            new("no", $"No OP ({facts.Count(f => f.HasOpening == false)})"),
+            new(FilterOption.UnknownValue, $"Not checked ({facts.Count(f => f.HasOpening is null)})"),
+        };
+        var rating = new List<FilterOption> { new(FilterOption.AnyValue, "Any rating") };
+        foreach (var minimum in new[] { 6.0, 7.0, 7.5, 8.0, 8.5 })
+        {
+            rating.Add(new(minimum.ToString("0.0", CultureInfo.InvariantCulture), $"{minimum.ToString("0.0", CultureInfo.CurrentCulture)}+ ({facts.Count(f => f.Rating >= minimum)})"));
+        }
+
+        rating.Add(new(FilterOption.UnknownValue, $"Unrated ({facts.Count(f => f.Rating is null)})"));
+
+        _rebuildingFilterOptions = true;
+        try
+        {
+            OpeningOptions = Same(OpeningOptions, opening);
+            RatingOptions = Same(RatingOptions, rating);
+            SourceOptions = Same(SourceOptions, ValueOptions("All sources", facts.Select(f => f.SourceMaterial), _sourceFilter));
+            FormatOptions = Same(FormatOptions, ValueOptions("All formats", facts.Select(f => f.Format), _formatFilter));
+            GenreOptions = Same(GenreOptions, ValueOptions("All genres", facts.SelectMany(f => f.Genres), _genreFilter, includeUnknown: false));
+            StudioOptions = Same(StudioOptions, ValueOptions("All studios", facts.SelectMany(f => f.Studios), _studioFilter, includeUnknown: false));
+        }
+        finally
+        {
+            _rebuildingFilterOptions = false;
+        }
+
+        // Re-select the current values in combo boxes whose options were just replaced.
+        NotifyDetailFilterValues();
+
+        static IReadOnlyList<FilterOption> Same(IReadOnlyList<FilterOption> current, List<FilterOption> next) =>
+            current.SequenceEqual(next) ? current : next;
+    }
+
+    /// <summary>
+    /// Lists each value with its show count. The selected value stays listed, with a count of zero, after no show has
+    /// it any more, so new details never silently widen an active filter.
+    /// </summary>
+    private static List<FilterOption> ValueOptions(string anyLabel, IEnumerable<string?> values, string selected, bool includeUnknown = true)
+    {
+        var list = values.ToList();
+        var options = new List<FilterOption> { new(FilterOption.AnyValue, anyLabel) };
+        options.AddRange(list
+            .Where(v => v is not null)
+            .GroupBy(v => v!, StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(g => g.Count())
+            .ThenBy(g => g.Key, StringComparer.CurrentCultureIgnoreCase)
+            .Select(g =>
+            {
+                // Keep the selected spelling, so a casing change in fetched details never blanks the bound combo box.
+                var value = string.Equals(g.Key, selected, StringComparison.OrdinalIgnoreCase) ? selected : g.Key;
+                return new FilterOption(value, $"{value} ({g.Count()})");
+            }));
+        var unknown = list.Count(v => v is null);
+        if (includeUnknown && unknown > 0)
+        {
+            options.Add(new(FilterOption.UnknownValue, $"Unknown ({unknown})"));
+        }
+
+        if (!options.Any(o => string.Equals(o.Value, selected, StringComparison.OrdinalIgnoreCase)))
+        {
+            options.Add(new(selected, selected == FilterOption.UnknownValue ? "Unknown (0)" : $"{selected} (0)"));
+        }
+
+        return options;
+    }
+
+    /// <summary>Two catalogue pages per show (videos and profile) at five seconds each.</summary>
+    private static string EstimateDuration(int shows)
+    {
+        var minutes = (int)Math.Ceiling(shows * 10 / 60.0);
+        return minutes <= 1 ? "a minute" : $"{minutes} minutes";
+    }
+
+    private void ShowDetailsReport(DetailsRunReport report)
+    {
+        if (!IsFetchingDetails)
+        {
+            return;
+        }
+
+        DetailsProgressTotal = Math.Max(1, report.Total);
+        DetailsProgressCompleted = report.Done;
+        var remaining = report.Total - report.Done;
+        DetailsStatus = $"Details: {report.Done} of {report.Total} shows checked" +
+            (report.Failed > 0 ? $", {report.Failed} failed" : string.Empty) +
+            (remaining > 0 ? $". About {EstimateDuration(remaining)} left." : ".");
+    }
+
+    private static string Describe(DetailsRunReport report)
+    {
+        var failures = report.Failed > 0
+            ? $" {report.Failed} failed; fetch details again to retry them." + (report.LastFailure is { } last ? $" Last error: {last}" : string.Empty)
+            : string.Empty;
+        return report.Outcome switch
+        {
+            DetailsRunOutcome.Cancelled => $"Stopped after {report.Done} of {report.Total} shows. Fetched details are saved; fetch details again to continue.",
+            DetailsRunOutcome.Paused => $"LiveChart asked the app to wait, so fetching paused after {report.Done} of {report.Total} shows. Fetch details again later to resume.",
+            DetailsRunOutcome.Unreachable => $"LiveChart could not be reached after {report.Done} of {report.Total} shows.",
+            DetailsRunOutcome.NotSaved => "Fetching stopped because the project could not be saved. Retry the save, then fetch details again.",
+            _ => $"Details and videos fetched for {report.Fetched} of {report.Total} shows." + failures,
+        };
     }
 
     private void ShowCoverReport(CoverRunReport report)

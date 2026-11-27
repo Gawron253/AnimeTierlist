@@ -78,6 +78,10 @@ public sealed partial class EntryViewModel : ObservableObject
     [ObservableProperty]
     private string _itemStatus = string.Empty;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DetailsSummary))]
+    private AnimeFacts _facts = AnimeFacts.Unknown;
+
     private ImageSource? _thumbnail;
 
     /// <summary>Creates an entry view model bound to a LiveChart identity within a collection.</summary>
@@ -94,6 +98,14 @@ public sealed partial class EntryViewModel : ObservableObject
     public string PositionText => $"#{Position}";
 
     public string SearchText { get; private set; } = string.Empty;
+
+    /// <summary>One line for the list view, such as "Manga · Rating 8.12 · Has OP"; empty while nothing is known.</summary>
+    public string DetailsSummary => string.Join(" · ", new[]
+    {
+        Facts.SourceMaterial,
+        Facts.Rating is { } rating ? $"Rating {rating.ToString("0.00", CultureInfo.CurrentCulture)}" : null,
+        Facts.HasOpening switch { true => "Has OP", false => "No OP", null => null },
+    }.Where(p => p is not null));
 
     public bool NeedsAttention => CoverBroken || CoverNeedsReview || CoverUnavailable || SourceMissing;
 
@@ -185,9 +197,10 @@ public sealed partial class EntryViewModel : ObservableObject
     /// (<paramref name="coverBroken"/>) shows a placeholder instead of a cached thumbnail, so the UI never presents
     /// an unusable cover as valid.
     /// </summary>
-    internal void Update(int position, CollectionEntry entry, ResolvedTitle title, SourceTitles observed, AssetRecord? asset, CoverEntryStatus? coverStatus, bool coverBroken)
+    internal void Update(int position, CollectionEntry entry, ResolvedTitle title, SourceTitles observed, AssetRecord? asset, CoverEntryStatus? coverStatus, bool coverBroken, AnimeFacts? facts = null)
     {
         Position = position;
+        Facts = facts ?? AnimeFacts.Unknown;
         OnPropertyChanged(nameof(PositionText));
         Title = title.Text;
         HasCustomTitle = title.Source == TitleSource.UserOverride;
