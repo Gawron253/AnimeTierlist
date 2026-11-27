@@ -140,6 +140,9 @@ public sealed partial class ProjectViewModel : ObservableObject, IAsyncDisposabl
     /// </summary>
     internal CancellationToken Lifetime => _lifetimeToken;
 
+    /// <summary>Set while one collection fetches details, so overlapping collections never request the same show twice.</summary>
+    internal bool IsFetchingDetails { get; set; }
+
     /// <summary>Runs a user command and reports rejection or suspension in the status line.</summary>
     internal SessionResult Execute(string label, Func<ProjectState, ProjectState> command)
     {
@@ -696,6 +699,11 @@ public sealed partial class ProjectViewModel : ObservableObject, IAsyncDisposabl
             return;
         }
 
+        foreach (var view in _collectionViews.Values)
+        {
+            view.FetchDetailsCancelCommand.Execute(null);
+        }
+
         _collectionViews.Clear();
         _boardViews.Clear();
         _pendingItemExtras.Clear();
@@ -919,7 +927,12 @@ public sealed partial class ProjectViewModel : ObservableObject, IAsyncDisposabl
         {
             if (!state.Collections.ContainsKey(Collections[i].Id))
             {
-                _collectionViews.Remove(Collections[i].Id);
+                if (_collectionViews.Remove(Collections[i].Id, out var removed))
+                {
+                    // The removed view held the only Stop control for its details run.
+                    removed.FetchDetailsCancelCommand.Execute(null);
+                }
+
                 Collections.RemoveAt(i);
             }
         }

@@ -27,6 +27,7 @@ Fetch a season from [LiveChart](https://www.livechart.me/) in its popularity ord
 - **Season and year fetches.** Pick a season (winter, spring, summer, fall) or a whole year, and filter by TV, Movies, OVAs, or All. Shows keep LiveChart's popularity order. A whole year combines the seasons in calendar order, winter first, and keeps a repeated show at its first appearance.
 - **Cover downloads.** Covers download in the background at the largest size LiveChart publishes. A missing cover stays a placeholder you can retry, and retrying never changes show order.
 - **Collections and title languages.** Include or exclude shows, search, reorder by hand, and switch between LiveChart's default title, English, romaji, native, or a custom title per show.
+- **Details for a whole collection and filters.** **Fetch details** gets LiveChart's details and videos for every show in a collection that does not have them yet, one page every five seconds, and saves each show as it arrives, so stopping and fetching again picks up where it left off. **Filters** then narrows the view by opening (has an OP, no OP, or not checked), source material, format, genre, studio, and minimum rating. **Include shown** and **Exclude shown** apply to what the filters show, for example to exclude every show without an OP.
 - **Tier boards.** Create several boards from one collection. Rename, recolor, reorder, add, or delete tiers. Rank by drag and drop or with the keyboard, and place duplicate copies of a show when you need them.
 - **Show details and OP/ED player.** Double-click a show on a board to see its LiveChart details, AniList and MyAnimeList links, and its videos, openings and endings first. YouTube videos play in the app or open in your browser. Details and the player open inside the main window, so sharing that window (for example in Discord) shows them too.
 - **Reviewed updates.** **Check LiveChart for updates** previews added, removed, renamed, and reordered shows before applying anything. **Update...** on a board syncs it with its collection and keeps the placements of shows that stay on the board.
@@ -65,7 +66,7 @@ Each release also includes a `.sha256` checksum file you can use to verify the d
 
 1. **Create a project.** Enter a name under **Create a project** and select **Create**, or pick an existing project under **Open a project**.
 2. **Fetch a season.** Select **New collection...**, choose a season or a whole year and a category, then select **Fetch from LiveChart**. Review the list and select **Create collection**. Covers download in the background. **Stop covers** pauses them and **Fetch covers** resumes.
-3. **Curate shows.** Every show starts included. Untick shows to exclude them, or use **Include all**, **Exclude all**, or search with **Include shown**. Search filters the view without changing the collection. **Move up**, **Move down**, **To top**, and **To bottom** adjust order, and the title-language list (**LiveChart default** at first) switches titles.
+3. **Curate shows.** Every show starts included. Untick shows to exclude them, or use **Include all**, **Exclude all**, or search with **Include shown**. Search filters the view without changing the collection. To filter by details, select **Fetch details** (in the **...** menu on narrow windows), then **Filters**; it takes about ten seconds per show. **Move up**, **Move down**, **To top**, and **To bottom** adjust order, and the title-language list (**LiveChart default** at first) switches titles.
 4. **Create a board.** Select **Create board...**, enter a name, and select **Create board**. Included shows start in Unranked in collection order.
 5. **Rank shows.** Drag shows into tiers, or select a card and use the keyboard (below). Double-click a card for details and OP/ED videos.
 6. **Export.** Use **Export PNG...** on a board, **Export covers...** on a collection, or **Export project...** in the top bar for an `.animerank` file.
@@ -120,7 +121,7 @@ AnimeTierlist has no telemetry, accounts, auto-updater, cloud sync, or backgroun
 
 - For seasons, covers, and show data it contacts only `www.livechart.me` and `u.livechart.me` over HTTPS, identifies itself as `AnimeTierlist/<version>`, and sends no cookies.
 - Season pages are fetched one at a time, at least five seconds apart, to respect LiveChart's crawl delay. At most two covers download at once. If LiveChart asks the app to wait, it waits or pauses instead of retrying early.
-- Show details and video links are fetched only when you open a show's details, with the same pacing.
+- Show details and video links are fetched only when you open a show's details or select **Fetch details** on a collection, with the same pacing.
 - LiveChart requests connect directly and ignore proxy settings, so networks that allow web access only through a proxy cannot fetch from LiveChart. The app tells you when this happens.
 - The video player connects to YouTube only while the player is open. It uses Windows network and proxy settings, and YouTube may show its own ads or consent prompts.
 

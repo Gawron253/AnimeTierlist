@@ -191,6 +191,11 @@
                             Visibility="{Binding IsFetchingCovers, Converter={StaticResource Hidden}}" />
                     <Button Style="{StaticResource DangerButton}" Content="Stop covers" Command="{Binding FetchCoversCancelCommand}" Margin="0,0,6,0"
                             Visibility="{Binding IsFetchingCovers, Converter={StaticResource Visible}}" />
+                    <Button Content="Fetch _details" Command="{Binding FetchDetailsCommand}" Margin="0,0,6,0"
+                            ToolTip="{Binding FetchDetailsToolTip}" ToolTipService.ShowOnDisabled="True"
+                            Visibility="{Binding ShowInlineFetchDetails, Converter={StaticResource Visible}}" />
+                    <Button Style="{StaticResource DangerButton}" Content="Stop details" Command="{Binding FetchDetailsCancelCommand}" Margin="0,0,6,0"
+                            Visibility="{Binding IsFetchingDetails, Converter={StaticResource Visible}}" />
                     <Button Content="Export c_overs..." Command="{Binding ExportCoversCommand}" Margin="0,0,6,0"
                             ToolTip="Export all included shows' covers in effective collection order into a new folder with a manifest." />
                     <Button Style="{StaticResource IconButton}" Command="{Binding ToggleInspectorCommand}" Margin="0,0,4,0"
@@ -207,6 +212,10 @@
                                 <MenuItem Header="Check LiveChart for _updates" Command="{Binding CheckForUpdatesCommand}" />
                                 <MenuItem Header="Stop update check" Command="{Binding CheckForUpdatesCancelCommand}"
                                           Visibility="{Binding IsCheckingUpdates, Converter={StaticResource Visible}}" />
+                                <MenuItem Header="Fetch _details for all shows" Command="{Binding FetchDetailsCommand}"
+                                          Visibility="{Binding IsFetchingDetails, Converter={StaticResource Hidden}}" />
+                                <MenuItem Header="Stop fetching details" Command="{Binding FetchDetailsCancelCommand}"
+                                          Visibility="{Binding IsFetchingDetails, Converter={StaticResource Visible}}" />
                                 <MenuItem Header="Rename collection..." Command="{Binding BeginInlineRenameCommand}" InputGestureText="Ctrl+Shift+R" />
                                 <Separator />
                                 <MenuItem Header="_Include all shows" Command="{Binding IncludeAllCommand}" InputGestureText="Alt+I" />
@@ -262,6 +271,11 @@
                                      Content="{Binding AttentionChipLabel}"
                                      Visibility="{Binding NeedsAttentionCount, Converter={StaticResource IfAny}}" />
 
+                        <!-- Details filters (OP, source, format, genre, studio, rating) open in the row below -->
+                        <Button Style="{StaticResource SubtleButton}" Command="{Binding ToggleDetailFiltersCommand}" Margin="0,2,4,2" Padding="5,3" FontSize="12"
+                                Content="{Binding DetailFiltersLabel}" AutomationProperties.Name="Show details filters"
+                                ToolTip="Filter by opening videos, source material, format, genre, studio, or rating" />
+
                         <!-- Bulk actions (fold into overflow menu on narrow viewports so filter bar stays single-row at 960x540) -->
                         <Button Style="{StaticResource SubtleButton}" Content="_Include all" Command="{Binding IncludeAllCommand}" Margin="0,2,1,2" Padding="5,3" FontSize="12"
                                 Visibility="{Binding ShowInlineBulkActions, Converter={StaticResource Visible}}" />
@@ -271,6 +285,10 @@
                                 Content="{Binding IncludeVisibleLabel}"
                                 Visibility="{Binding IsFiltered, Converter={StaticResource Visible}}"
                                 ToolTip="Includes every entry currently matching the visual filter." />
+                        <Button Style="{StaticResource SubtleButton}" Command="{Binding ExcludeVisibleCommand}" Margin="0,2,2,2" Padding="5,3" FontSize="12"
+                                Content="{Binding ExcludeVisibleLabel}"
+                                Visibility="{Binding IsFiltered, Converter={StaticResource Visible}}"
+                                ToolTip="Excludes every entry currently matching the visual filter." />
                     </WrapPanel>
 
                     <!-- Right display controls: Language, Grid/List, Density -->
@@ -328,6 +346,54 @@
                         </Border>
                     </StackPanel>
                 </Grid>
+            </Border>
+
+            <!-- Details filters row: visual filters over fetched LiveChart details; never change order or export scope -->
+            <Border Background="{DynamicResource Brush.BgSurface}" BorderBrush="{DynamicResource Brush.BorderSubtle}"
+                    BorderThickness="1" CornerRadius="6" Padding="8,4" Margin="0,0,0,8"
+                    Visibility="{Binding ShowDetailFilters, Converter={StaticResource Visible}}">
+                <WrapPanel VerticalAlignment="Center">
+                    <WrapPanel.Resources>
+                        <Style TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+                            <Setter Property="Margin" Value="0,2,8,2" />
+                            <Setter Property="DisplayMemberPath" Value="Label" />
+                            <Setter Property="SelectedValuePath" Value="Value" />
+                        </Style>
+                    </WrapPanel.Resources>
+                    <ComboBox Width="140" ItemsSource="{Binding OpeningOptions}" SelectedValue="{Binding OpeningFilter}"
+                              AutomationProperties.Name="Opening filter" ToolTip="Opening (OP) videos listed on LiveChart. Fetch details checks shows that are not checked yet." />
+                    <ComboBox Width="140" ItemsSource="{Binding SourceOptions}" SelectedValue="{Binding SourceFilter}"
+                              AutomationProperties.Name="Source material filter" ToolTip="Source material" />
+                    <ComboBox Width="120" ItemsSource="{Binding FormatOptions}" SelectedValue="{Binding FormatFilter}"
+                              AutomationProperties.Name="Format filter" ToolTip="Format" />
+                    <ComboBox Width="140" ItemsSource="{Binding GenreOptions}" SelectedValue="{Binding GenreFilter}"
+                              AutomationProperties.Name="Genre filter" ToolTip="Genre or tag" />
+                    <ComboBox Width="140" ItemsSource="{Binding StudioOptions}" SelectedValue="{Binding StudioFilter}"
+                              AutomationProperties.Name="Studio filter" ToolTip="Studio" />
+                    <ComboBox Width="120" ItemsSource="{Binding RatingOptions}" SelectedValue="{Binding RatingFilter}"
+                              AutomationProperties.Name="Minimum rating filter" ToolTip="LiveChart user rating out of 10" />
+                    <Button Style="{StaticResource LinkButton}" Content="Reset" Command="{Binding ClearDetailFiltersCommand}" VerticalAlignment="Center"
+                            Visibility="{Binding HasDetailFilters, Converter={StaticResource Visible}}" AutomationProperties.Name="Reset details filters" />
+                </WrapPanel>
+            </Border>
+
+            <!-- Conditional Details Progress / Status strip -->
+            <Border Background="{DynamicResource Brush.BgSurface}" BorderBrush="{DynamicResource Brush.BorderSubtle}"
+                    BorderThickness="1" CornerRadius="6" Padding="10,6" Margin="0,0,0,8"
+                    Visibility="{Binding DetailsStatus, Converter={StaticResource IfAny}}">
+                <DockPanel>
+                    <Button DockPanel.Dock="Right" Style="{StaticResource IconButton}" Width="24" Height="24" MinHeight="24"
+                            Command="{Binding DismissDetailsStatusCommand}" Visibility="{Binding IsFetchingDetails, Converter={StaticResource Hidden}}"
+                            AutomationProperties.Name="Dismiss details status" Margin="8,0,0,0">
+                        <Path Data="{StaticResource Icon.Close}" Width="10" Height="10" Stretch="Uniform"
+                              Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.8" />
+                    </Button>
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource Text.Caption}" Text="{Binding DetailsStatus}" TextWrapping="Wrap" />
+                        <ProgressBar Margin="0,5,0,0" Minimum="0" Maximum="{Binding DetailsProgressTotal}" Value="{Binding DetailsProgressCompleted}"
+                                     Visibility="{Binding IsFetchingDetails, Converter={StaticResource Visible}}" />
+                    </StackPanel>
+                </DockPanel>
             </Border>
 
             <!-- Conditional Cover Progress / Status strip -->
@@ -496,6 +562,9 @@
                                             <TextBlock FontSize="12" Text="{Binding TitleNote}"
                                                        Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ListViewItem}}"
                                                        Visibility="{Binding TitleNote, Converter={StaticResource IfAny}}" />
+                                            <TextBlock FontSize="12" Text="{Binding DetailsSummary}" TextWrapping="Wrap"
+                                                       Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ListViewItem}}"
+                                                       Visibility="{Binding DetailsSummary, Converter={StaticResource IfAny}}" />
                                             <TextBlock FontSize="11" Text="No longer listed by LiveChart"
                                                        Visibility="{Binding SourceMissing, Converter={StaticResource Visible}}">
                                                 <TextBlock.Style>

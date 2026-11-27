@@ -166,7 +166,7 @@ public partial class CollectionView : UserControl
 
     private void OnWorkspaceGridSizeChanged(object sender, SizeChangedEventArgs e)
     {
-        SyncCompactViewportDensity();
+        SyncCompactViewportDensity(widthChanged: false);
         SyncListTitleColumnWidth();
     }
 
@@ -197,14 +197,20 @@ public partial class CollectionView : UserControl
         ListTitleColumn.Width = Math.Max(220, Math.Floor(viewportWidth - fixedWidth - itemAndHeaderChrome));
     }
 
-    private void SyncCompactViewportDensity()
+    private void SyncCompactViewportDensity(bool widthChanged = true)
     {
         if (ViewModel is not { } vm)
         {
             return;
         }
 
-        vm.IsNarrowToolbar = ActualWidth > 0 && ActualWidth < 960;
+        // Only a width change re-evaluates the width-based toolbar fold. Folding the bulk actions changes the header's
+        // height, so re-evaluating on that height change could flip the fold back and forth.
+        if (widthChanged)
+        {
+            vm.IsNarrowToolbar = ActualWidth > 0 && ActualWidth < 960;
+        }
+
         var availableGridHeight = WorkspaceGrid.ActualHeight;
         vm.CompactViewportLevel = availableGridHeight > 0 && availableGridHeight < 225
             ? 2
